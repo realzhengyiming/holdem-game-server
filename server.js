@@ -1527,8 +1527,24 @@ function roomStateFor(room, viewerId) {
       hole: reveal || player.userId === viewerId ? player.hole || [] : (player.hole || []).map(() => "??"),
       result: player.result || ""
     } : null),
+    spectators: roomSpectators(room),
     messages: room.messages.slice(-30)
   };
+}
+
+function roomSpectators(room) {
+  const seatedUserIds = new Set(room.seats.filter(Boolean).map((player) => player.userId));
+  const seen = new Set();
+  const spectators = [];
+  for (const client of clients) {
+    if (client.roomId !== room.id || seatedUserIds.has(client.user.id) || seen.has(client.user.id)) continue;
+    seen.add(client.user.id);
+    spectators.push({
+      userId: client.user.id,
+      username: client.user.username
+    });
+  }
+  return spectators.sort((a, b) => a.username.localeCompare(b.username, "zh-Hans-CN"));
 }
 
 function isUserConnected(userId) {

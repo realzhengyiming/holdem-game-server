@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const CLIENT_VERSION = "0.1.10";
+const CLIENT_VERSION = "0.1.11";
 const DEFAULT_WAGER_AMOUNT = 20;
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
@@ -880,6 +880,7 @@ function renderRoom() {
   $("#lastAction").innerHTML = fairnessHtml(snapshot.game);
   updateFairnessVerification(snapshot.game);
   renderSettlement(snapshot.game);
+  renderSpectators(snapshot.spectators || []);
 
   const acting = snapshot.seats[snapshot.game.actingSeat];
   $("#turnLabel").textContent = acting ? `轮到 ${acting.username}` : "等待操作";
@@ -929,6 +930,21 @@ function renderRoom() {
     `<div><strong>${escapeHtml(message.username)}:</strong> ${escapeHtml(message.text)}</div>`
   )).join("");
   $("#messages").scrollTop = $("#messages").scrollHeight;
+}
+
+function renderSpectators(spectators) {
+  const panel = $("#spectators");
+  if (!panel) return;
+  const items = spectators || [];
+  panel.classList.toggle("empty", items.length === 0);
+  panel.innerHTML = `
+    <div class="spectatorsTitle">观众 <strong>${items.length}</strong></div>
+    <div class="spectatorsList">
+      ${items.length
+        ? items.map((spectator) => `<span class="spectatorName">${escapeHtml(spectator.username)}</span>`).join("")
+        : `<span class="spectatorEmpty">暂无观众</span>`}
+    </div>
+  `;
 }
 
 function renderWagerControls(snapshot, mySeat, isMyTurn, activeHand) {

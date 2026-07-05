@@ -259,6 +259,7 @@ async function main() {
   const spectatorOnly = clients[3].latestRoomState();
   assert.ok(spectatorOnly);
   assert.equal(spectatorOnly.seats.filter(Boolean).length, 0);
+  assert.ok(spectatorOnly.spectators.some((spectator) => spectator.userId === users[3].id));
   log("WebSocket 进房同步正常，未入座也可观战");
 
   for (let seat = 0; seat < 3; seat += 1) {
@@ -333,6 +334,7 @@ async function main() {
   const lateJoin = await waitForRoom(clients[3], (message) => Boolean(message.seats[3]), "late sit");
   assert.equal(lateJoin.seats[3].inHand, false);
   assert.equal(lateJoin.seats[3].hole.length, 0);
+  assert.ok(!lateJoin.spectators.some((spectator) => spectator.userId === users[3].id));
   log("牌局中有空位可入座，但新玩家不会加入当前手牌");
 
   clients[0].send({ type: "emote", emote: "wellPlayed", targetSeat: 0 });
