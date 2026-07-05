@@ -247,24 +247,20 @@ p {
   margin-top: 4px;
   color: #c9d8d5;
   font-size: 13px;
+  line-height: 1.45;
 }
 
-.drinkOptions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.drinkOptions span {
-  display: grid;
-  place-items: center;
-  min-height: 36px;
+.supportQrWrap {
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 999px;
-  background: rgb(8 18 24 / 72%);
-  color: #fff8df;
-  font-weight: 800;
-  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px;
+  background: rgb(255 255 255 / 92%);
+}
+
+.supportQrWrap img {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
 }
 
 .settingGrid {

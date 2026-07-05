@@ -1493,8 +1493,9 @@ function handleWsMessage(client, message) {
     const baseText = EMOTES.get(emoteKey);
     if (!baseText) throw new Error("未知互动");
     const rawTargetSeat = payload.targetSeat;
-    const targetSeat = rawTargetSeat === null || rawTargetSeat === undefined || rawTargetSeat === "" ? null : Number(rawTargetSeat);
+    let targetSeat = rawTargetSeat === null || rawTargetSeat === undefined || rawTargetSeat === "" ? null : Number(rawTargetSeat);
     if (targetSeat !== null && !Number.isInteger(targetSeat)) throw new Error("互动目标不存在");
+    if (targetSeat === fromSeat) targetSeat = null;
     if (targetSeat !== null && (!room.seats[targetSeat] || targetSeat < 0 || targetSeat >= MAX_SEATS)) {
       throw new Error("互动目标不存在");
     }

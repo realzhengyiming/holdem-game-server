@@ -70,7 +70,7 @@ $("#backLobbyBtn").addEventListener("click", attemptBackLobby);
 $("#startHandBtn").addEventListener("click", () => send({ type: "startHand" }));
 $("#readyBtn").addEventListener("click", toggleReady);
 $("#randomAvatarBtn").addEventListener("click", () => send({ type: "switchAvatar" }));
-$("#sendEmoteBtn").addEventListener("click", sendEmote);
+$("#sendEmoteBtn").addEventListener("click", () => sendEmote());
 $("#dealerTipBtn").addEventListener("click", tipDealer);
 $("#rulesToggle").addEventListener("click", toggleRulesDrawer);
 $("#rulesClose").addEventListener("click", closeRulesDrawer);
@@ -261,8 +261,9 @@ function sendAction(action) {
   send({ type: "action", action, amount: Number($("#amountInput").value || 0) });
 }
 
-function sendEmote(emote = $("#emoteSelect").value, targetSeat = null) {
-  const targetValue = targetSeat === null ? $("#emoteTarget").value : targetSeat;
+function sendEmote(emote = $("#emoteSelect").value, targetSeat) {
+  const hasExplicitTarget = arguments.length >= 2;
+  const targetValue = hasExplicitTarget ? targetSeat : $("#emoteTarget").value;
   send({
     type: "emote",
     emote,
@@ -798,7 +799,7 @@ function renderSocialControls(snapshot, mySeat, activeHand) {
   const target = $("#emoteTarget");
   const currentTarget = target.value;
   const options = [`<option value="">全桌</option>`].concat(snapshot.seats
-    .filter(Boolean)
+    .filter((seat) => seat && seat.userId !== mySeat?.userId)
     .map((seat) => `<option value="${seat.seat}">${escapeHtml(seat.username)}</option>`));
   target.innerHTML = options.join("");
   if ([...target.options].some((option) => option.value === currentTarget)) {
@@ -980,10 +981,11 @@ function openEmoteMenu(targetSeat) {
     alert("先坐下，再互动。");
     return;
   }
-  const target = Number.isInteger(targetSeat) ? snapshot.seats[targetSeat] : null;
-  if (!target) return;
+  const explicitTargetSeat = Number.isInteger(targetSeat) && targetSeat !== mySeat.seat ? targetSeat : null;
+  const target = explicitTargetSeat !== null ? snapshot.seats[explicitTargetSeat] : null;
+  if (explicitTargetSeat !== null && !target) return;
   closeEmoteMenu();
-  state.emoteMenuTargetSeat = targetSeat;
+  state.emoteMenuTargetSeat = explicitTargetSeat;
 
   const mySeatEl = document.querySelector(`[data-seat="${mySeat.seat}"]`);
   const surface = $(".tableSurface");
@@ -998,7 +1000,7 @@ function openEmoteMenu(targetSeat) {
     <div class="emoteBubbleTail"></div>
     ${EMOTES.map((emote, index) => `
       <button type="button" class="emoteBubbleChoice emoteChoice${index}" data-emote="${emote.key}">
-        ${escapeHtml(target ? `你${emote.text}` : emote.text)}
+        ${escapeHtml(explicitTargetSeat !== null ? `你${emote.text}` : emote.text)}
       </button>
     `).join("")}
   `;
