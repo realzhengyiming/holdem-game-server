@@ -30,6 +30,7 @@ const EMOTE_COOLDOWN_MS = clampConfigInt(process.env.EMOTE_COOLDOWN_MS, 2500, 50
 const CHAT_COOLDOWN_MS = clampConfigInt(process.env.CHAT_COOLDOWN_MS, 3000, 500, 60000);
 const DEALER_TIP_COOLDOWN_MS = clampConfigInt(process.env.DEALER_TIP_COOLDOWN_MS, 2000, 500, 60000);
 const FEEDBACK_COOLDOWN_MS = clampConfigInt(process.env.FEEDBACK_COOLDOWN_MS, 30000, 3000, 300000);
+const AUTO_NEXT_HAND_DELAY_MS = clampConfigInt(process.env.AUTO_NEXT_HAND_DELAY_MS, 6000, 1000, 30000);
 const APP_VERSION = process.env.APP_VERSION || packageInfo.version || "0.1.0";
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "poker.sqlite");
@@ -771,6 +772,7 @@ function createRoom(name, owner, settings = {}) {
     settings: { smallBlind, bigBlind, startingChips },
     dealerTips: 0,
     turnTimer: null,
+    nextHandTimer: null,
     chipAnimations: [],
     music: {
       mode: "single",
@@ -797,10 +799,12 @@ function createRoom(name, owner, settings = {}) {
       board: [],
       pot: 0,
       currentBet: 0,
+      fullBet: 0,
       minRaise: bigBlind,
       actingSeat: null,
       turnStartedAt: 0,
       turnDeadlineAt: 0,
+      nextHandStartsAt: 0,
       acted: [],
       winners: [],
       lastAction: "等待玩家入座"
@@ -920,6 +924,41 @@ function clearTurnTimer(room) {
   room.game.turnDeadlineAt = 0;
 }
 
+function clearNextHandTimer(room) {
+  if (room.nextHandTimer) {
+    clearTimeout(room.nextHandTimer);
+    room.nextHandTimer = null;
+  }
+  room.game.nextHandStartsAt = 0;
+}
+
+function autoReadyNextHand(room) {
+  for (const player of occupiedSeats(room)) {
+    player.ready = player.chips > 0;
+  }
+}
+
+function scheduleNextHand(room) {
+  clearNextHandTimer(room);
+  if (room.game.status !== "showdown") return;
+  const roomSummary = publicRoom(room);
+  if (!roomSummary.canStart) return;
+  const handNumber = room.game.handNumber;
+  room.game.nextHandStartsAt = Date.now() + AUTO_NEXT_HAND_DELAY_MS;
+  room.nextHandTimer = setTimeout(() => {
+    const currentRoom = rooms.get(room.id);
+    if (!currentRoom || currentRoom.game.handNumber !== handNumber || currentRoom.game.status !== "showdown") return;
+    currentRoom.nextHandTimer = null;
+    currentRoom.game.nextHandStartsAt = 0;
+    if (!publicRoom(currentRoom).canStart) {
+      broadcastRoom(currentRoom);
+      return;
+    }
+    startHand(currentRoom);
+    broadcastRoom(currentRoom);
+  }, AUTO_NEXT_HAND_DELAY_MS);
+}
+
 function scheduleTurnTimer(room) {
   if (room.turnTimer) {
     clearTimeout(room.turnTimer);
@@ -977,6 +1016,7 @@ function handleTurnTimeout(roomId, handNumber, actingSeat, deadline) {
 }
 
 function startHand(room) {
+  clearNextHandTimer(room);
   const seated = occupiedSeats(room).filter((player) => player.chips > 0);
   if (seated.length < 2) {
     throw new Error("至少需要 2 个有筹码的玩家");
@@ -997,7 +1037,9 @@ function startHand(room) {
   game.board = [];
   game.pot = 0;
   game.currentBet = 0;
+  game.fullBet = 0;
   game.minRaise = room.settings.bigBlind;
+  game.nextHandStartsAt = 0;
   game.acted = [];
   game.winners = [];
 
@@ -1023,6 +1065,7 @@ function startHand(room) {
   addChipAnimation(room, smallBlindSeat, smallBlindPaid, "小盲");
   addChipAnimation(room, bigBlindSeat, bigBlindPaid, "大盲");
   game.currentBet = Math.max(room.seats[smallBlindSeat].bet, room.seats[bigBlindSeat].bet);
+  game.fullBet = game.currentBet >= room.settings.bigBlind ? game.currentBet : 0;
 
   for (let round = 0; round < 2; round += 1) {
     for (const player of occupiedSeats(room).filter((item) => item.inHand)) {
@@ -1039,6 +1082,26 @@ function startHand(room) {
 
 function canAct(player) {
   return player.inHand && !player.folded && player.chips > 0;
+}
+
+function maximumWagerTotal(player) {
+  return (player.bet || 0) + (player.chips || 0);
+}
+
+function minimumFullWagerTotal(room) {
+  const game = room.game;
+  if (game.currentBet <= 0 || game.fullBet <= 0) {
+    return room.settings.bigBlind;
+  }
+  return game.currentBet + game.minRaise;
+}
+
+function canPlayerRaise(room, player) {
+  if (!player || !canAct(player)) return false;
+  const game = room.game;
+  if (game.currentBet <= 0) return maximumWagerTotal(player) > 0;
+  if (game.acted.includes(player.userId)) return false;
+  return maximumWagerTotal(player) > game.currentBet;
 }
 
 function takeChips(room, seatIndex, amount) {
@@ -1095,34 +1158,62 @@ function applyPlayerAction(room, seatIndex, action, amount, prefix = "") {
       throw new Error("已有下注，请选择加注");
     }
     const total = Math.floor(Number(amount));
-    if (!Number.isFinite(total) || total < room.settings.bigBlind) {
+    const maxTotal = maximumWagerTotal(player);
+    const targetTotal = Math.min(total, maxTotal);
+    const isAllIn = targetTotal >= maxTotal;
+    const isFullBet = targetTotal >= room.settings.bigBlind;
+    if (!Number.isFinite(total) || targetTotal <= 0) {
+      throw new Error("下注金额不正确");
+    }
+    if (!isFullBet && !isAllIn) {
       throw new Error(`下注至少 ${room.settings.bigBlind}`);
     }
-    const paid = takeChips(room, seatIndex, total);
+    const paid = takeChips(room, seatIndex, targetTotal);
     addChipAnimation(room, seatIndex, paid, "下注");
     game.currentBet = player.bet;
-    game.minRaise = room.settings.bigBlind;
-    game.acted = [player.userId];
-    game.lastAction = `${name} 下注 ${paid}`;
-  } else if (action === "raise") {
-    const total = Math.floor(Number(amount));
-    const raiseBy = total - game.currentBet;
-    if (!Number.isFinite(total) || total <= game.currentBet) {
-      throw new Error("加注金额需要高于当前下注");
-    }
-    if (raiseBy < game.minRaise && total < player.bet + player.chips) {
-      throw new Error(`最小加注额为 ${game.minRaise}`);
-    }
-    const paid = takeChips(room, seatIndex, total - player.bet);
-    addChipAnimation(room, seatIndex, paid, "加注");
-    if (player.bet > game.currentBet) {
-      game.minRaise = Math.max(game.minRaise, player.bet - game.currentBet);
-      game.currentBet = player.bet;
+    if (isFullBet) {
+      game.fullBet = player.bet;
+      game.minRaise = player.bet;
       game.acted = [player.userId];
     } else {
       game.acted.push(player.userId);
     }
-    game.lastAction = `${name} 加注到 ${player.bet}（本次投入 ${paid}）`;
+    game.lastAction = isFullBet ? `${name} 下注 ${paid}` : `${name} 全下 ${paid}`;
+  } else if (action === "raise") {
+    const total = Math.floor(Number(amount));
+    const maxTotal = maximumWagerTotal(player);
+    const targetTotal = Math.min(total, maxTotal);
+    const minFullTotal = minimumFullWagerTotal(room);
+    const isAllIn = targetTotal >= maxTotal;
+    const isFullRaise = targetTotal >= minFullTotal;
+    if (!Number.isFinite(total) || targetTotal <= game.currentBet) {
+      throw new Error("加注金额需要高于当前下注");
+    }
+    if (!canPlayerRaise(room, player)) {
+      throw new Error("本轮下注未被完整加注，不能再次加注");
+    }
+    if (!isFullRaise && !isAllIn) {
+      throw new Error(`最小加注到 ${minFullTotal}`);
+    }
+    const previousBet = game.currentBet;
+    const previousFullBet = game.fullBet;
+    const paid = takeChips(room, seatIndex, targetTotal - player.bet);
+    addChipAnimation(room, seatIndex, paid, "加注");
+    if (player.bet > game.currentBet) {
+      game.currentBet = player.bet;
+      if (isFullRaise) {
+        game.fullBet = player.bet;
+        game.minRaise = previousFullBet > 0 ? player.bet - previousBet : player.bet;
+        game.acted = [player.userId];
+      } else {
+        game.acted.push(player.userId);
+      }
+    } else {
+      game.acted.push(player.userId);
+    }
+    game.lastAction = isFullRaise
+      ? `${name} 加注到 ${player.bet}（本次投入 ${paid}）`
+      : `${name} 全下到 ${player.bet}（本次投入 ${paid}）`;
   } else {
     throw new Error("未知操作");
   }
@@ -1198,13 +1289,15 @@ function resolveAutomaticAction(room, seatIndex, preset) {
 
   if (preset.action === "betRaise") {
     const total = Math.floor(Number(preset.amount));
-    if (game.currentBet === 0 && Number.isFinite(total) && total >= room.settings.bigBlind) {
+    if (game.currentBet === 0
+      && Number.isFinite(total)
+      && (total >= room.settings.bigBlind || total >= maximumWagerTotal(player))) {
       return { action: "bet", amount: total };
     }
-    const raiseBy = total - game.currentBet;
     const canRaise = Number.isFinite(total)
       && total > game.currentBet
-      && (raiseBy >= game.minRaise || total >= player.bet + player.chips);
+      && canPlayerRaise(room, player)
+      && (total >= minimumFullWagerTotal(room) || total >= maximumWagerTotal(player));
     if (game.currentBet > 0 && canRaise) {
       return { action: "raise", amount: total };
     }
@@ -1253,6 +1346,7 @@ function advanceStreet(room) {
     player.bet = 0;
   }
   game.currentBet = 0;
+  game.fullBet = 0;
   game.minRaise = room.settings.bigBlind;
   game.acted = [];
 
@@ -1307,6 +1401,8 @@ function awardSingleWinner(room, player) {
   game.status = "showdown";
   revealFairProof(room);
   game.lastAction = `${player.username} 赢得本手`;
+  autoReadyNextHand(room);
+  scheduleNextHand(room);
 }
 
 function showdown(room) {
@@ -1360,6 +1456,8 @@ function showdown(room) {
   game.status = "showdown";
   revealFairProof(room);
   game.lastAction = "摊牌结算";
+  autoReadyNextHand(room);
+  scheduleNextHand(room);
 }
 
 function buildSidePots(room) {
@@ -1492,10 +1590,12 @@ function roomStateFor(room, viewerId) {
       pot: room.game.pot,
       dealerTips: room.dealerTips || 0,
       currentBet: room.game.currentBet,
+      minimumFullWagerTotal: minimumFullWagerTotal(room),
       minRaise: room.game.minRaise,
       actingSeat: room.game.actingSeat,
       turnStartedAt: room.game.turnStartedAt || 0,
       turnDeadlineAt: room.game.turnDeadlineAt || 0,
+      nextHandStartsAt: room.game.nextHandStartsAt || 0,
       timeLimitMs: TURN_TIME_MS,
       serverNow: Date.now(),
       smallBlind: room.game.smallBlind,
@@ -1523,6 +1623,7 @@ function roomStateFor(room, viewerId) {
       ready: Boolean(player.ready),
       avatar: player.avatar || "",
       connected: isUserConnected(player.userId),
+      canRaise: canPlayerRaise(room, player),
       pendingAction: player.userId === viewerId ? player.pendingAction || null : null,
       hole: reveal || player.userId === viewerId ? player.hole || [] : (player.hole || []).map(() => "??"),
       result: player.result || ""
@@ -1655,12 +1756,14 @@ function handleWsMessage(client, message) {
     if (currentIndex >= 0) {
       if (isHandInProgress(room)) throw new Error("手牌进行中不能换座位");
       const player = room.seats[currentIndex];
-      player.ready = true;
+      if (player.ready) throw new Error("已准备后不能换座位，请先取消准备");
+      player.ready = false;
       player.pendingAction = null;
       player.result = "";
       room.seats[currentIndex] = null;
       room.seats[index] = player;
       room.game.lastAction = `${client.user.username} 换到座位 ${index + 1}`;
+      if (room.game.status === "showdown") scheduleNextHand(room);
       broadcastRoom(room);
       return;
     }
@@ -1674,17 +1777,23 @@ function handleWsMessage(client, message) {
       folded: false,
       allIn: false,
       inHand: false,
-      ready: true,
+      ready: false,
       pendingAction: null,
       result: ""
     };
-    room.game.lastAction = `${client.user.username} 入座并自动准备`;
+    room.game.lastAction = `${client.user.username} 入座`;
+    if (room.game.status === "showdown") scheduleNextHand(room);
     broadcastRoom(room);
   } else if (payload.type === "stand") {
     const index = room.seats.findIndex((seat) => seat && seat.userId === client.user.id);
+    const player = index >= 0 ? room.seats[index] : null;
+    if (player?.ready && !isHandInProgress(room)) {
+      throw new Error("已准备后不能直接起身，请先取消准备");
+    }
     if (index >= 0 && !isHandInProgress(room)) {
       room.seats[index] = null;
       room.game.lastAction = `${client.user.username} 离座`;
+      if (room.game.status === "showdown") scheduleNextHand(room);
       broadcastRoom(room);
     } else if (index < 0) {
       throw new Error("你还没有入座");
@@ -1698,12 +1807,14 @@ function handleWsMessage(client, message) {
     player.ready = true;
     player.result = "";
     room.game.lastAction = `${client.user.username} 已准备`;
+    if (room.game.status === "showdown") scheduleNextHand(room);
     broadcastRoom(room);
   } else if (payload.type === "unready") {
     const player = seatedPlayer(room, client.user.id);
     if (!player) throw new Error("你还没有入座");
     if (isHandInProgress(room)) throw new Error("手牌进行中不能修改准备状态");
     player.ready = false;
+    clearNextHandTimer(room);
     room.game.lastAction = `${client.user.username} 取消准备`;
     broadcastRoom(room);
   } else if (payload.type === "switchAvatar") {

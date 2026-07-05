@@ -391,19 +391,8 @@ p {
 }
 
 .spectatorsPanel {
-  position: absolute;
-  left: -14px;
-  top: 86px;
-  z-index: 8;
-  width: 158px;
-  max-height: 210px;
-  padding: 12px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-left: 0;
-  border-radius: 0 8px 8px 0;
-  background: rgb(6 14 20 / 76%);
-  box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
-  backdrop-filter: blur(8px);
+  display: grid;
+  gap: 10px;
 }
 
 .spectatorsPanel.empty {
@@ -427,8 +416,8 @@ p {
 
 .spectatorsList {
   display: grid;
-  gap: 6px;
-  max-height: 152px;
+  gap: 8px;
+  max-height: calc(100vh - 150px);
   overflow: auto;
 }
 
@@ -436,7 +425,7 @@ p {
 .spectatorEmpty {
   min-width: 0;
   color: #c9d8d5;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.25;
 }
 
@@ -460,15 +449,15 @@ p {
 .boardLine {
   position: absolute;
   left: 50%;
-  top: 50%;
-  width: min(460px, 52vw);
-  min-height: 170px;
+  top: 48%;
+  width: min(540px, 58vw);
+  min-height: 190px;
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 30px;
-  padding: 20px 28px;
+  padding: 22px 30px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 999px;
   background: rgb(3 32 29 / 34%);
@@ -485,21 +474,22 @@ p {
 
 .cards {
   display: flex;
-  min-height: 70px;
-  gap: 8px;
+  min-height: 82px;
+  gap: 10px;
   align-items: center;
 }
 
 .card {
   display: grid;
   place-items: center;
-  width: 46px;
+  width: 58px;
   aspect-ratio: 0.72;
-  border-radius: 7px;
+  border-radius: 8px;
   border: 1px solid #d8e0dd;
   background:
     linear-gradient(150deg, #ffffff, #e8f1ef);
   color: #101010;
+  font-size: 18px;
   font-weight: 900;
   box-shadow: 0 8px 18px rgb(0 0 0 / 30%);
 }
@@ -514,6 +504,16 @@ p {
     linear-gradient(135deg, rgb(255 255 255 / 10%), transparent),
     repeating-linear-gradient(45deg, #244eae 0 9px, #173a8c 9px 18px);
   color: #dbe3ff;
+}
+
+.tableStartBtn {
+  position: absolute;
+  left: 50%;
+  top: calc(48% + 120px);
+  z-index: 12;
+  min-width: 170px;
+  transform: translateX(-50%);
+  box-shadow: 0 14px 32px rgb(0 0 0 / 34%);
 }
 
 .pot {
@@ -779,8 +779,8 @@ p {
 
 .seat {
   position: absolute;
-  width: clamp(156px, 16vw, 196px);
-  min-height: 82px;
+  width: clamp(176px, 18vw, 220px);
+  min-height: 96px;
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 14px;
   background:
@@ -899,7 +899,7 @@ p {
 
 .seat .cards {
   min-height: 0;
-  gap: 6px;
+  gap: 7px;
 }
 
 .seat .cards:empty {
@@ -907,9 +907,9 @@ p {
 }
 
 .seat .card {
-  width: 34px;
+  width: 44px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 15px;
 }
 
 .seatName {
@@ -1452,6 +1452,13 @@ p {
   transform: translateX(0);
 }
 
+.spectatorsDrawer {
+  left: 0;
+  right: auto;
+  width: min(300px, calc(100vw - 48px));
+  transform: translateX(calc(-100% + 48px));
+}
+
 .sideToggle {
   position: absolute;
   left: 0;
@@ -1465,6 +1472,18 @@ p {
   writing-mode: vertical-rl;
   pointer-events: auto;
   box-shadow: 0 14px 34px rgb(0 0 0 / 36%);
+}
+
+.spectatorsDrawer .sideToggle {
+  left: auto;
+  right: 0;
+  border-radius: 0 10px 10px 0;
+  color: #dffff2;
+}
+
+.spectatorsToggle {
+  top: 38%;
+  border-color: rgb(53 196 134 / 34%);
 }
 
 .rulesToggle {
@@ -1490,6 +1509,14 @@ p {
   border-left: 1px solid var(--line);
   background: rgb(12 18 24 / 96%);
   box-shadow: -22px 0 54px rgb(0 0 0 / 38%);
+}
+
+.spectatorsDrawerPanel {
+  margin-right: 48px;
+  margin-left: 0;
+  border-right: 1px solid var(--line);
+  border-left: 0;
+  box-shadow: 22px 0 54px rgb(0 0 0 / 38%);
 }
 
 .feedbackPanel {
@@ -1656,14 +1683,7 @@ p {
   }
 
   .spectatorsPanel {
-    left: 50%;
-    top: 8px;
-    width: min(300px, calc(100% - 56px));
-    max-height: 70px;
-    padding: 7px 10px;
-    border: 1px solid rgb(255 255 255 / 14%);
-    border-radius: 8px;
-    transform: translateX(-50%);
+    gap: 8px;
   }
 
   .spectatorsTitle {
@@ -1672,10 +1692,10 @@ p {
   }
 
   .spectatorsList {
-    display: flex;
+    display: grid;
     gap: 8px;
-    max-height: 22px;
-    overflow: hidden;
+    max-height: calc(100vh - 122px);
+    overflow: auto;
   }
 
   .spectatorName,
@@ -1685,8 +1705,8 @@ p {
 
   .boardLine {
     position: absolute;
-    width: min(310px, 54vw);
-    min-height: 116px;
+    width: min(350px, 62vw);
+    min-height: 132px;
     padding: 12px 14px;
     gap: 12px;
     flex-direction: column;
@@ -1698,9 +1718,17 @@ p {
   }
 
   .card {
-    width: 34px;
+    width: 40px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 14px;
+  }
+
+  .tableStartBtn {
+    top: calc(48% + 92px);
+    min-width: 138px;
+    min-height: 38px;
+    padding-inline: 14px;
+    font-size: 13px;
   }
 
   .pot {
@@ -1725,8 +1753,8 @@ p {
 
   .seat {
     position: absolute;
-    width: clamp(96px, 28vw, 126px);
-    min-height: 58px;
+    width: clamp(116px, 31vw, 148px);
+    min-height: 70px;
     grid-template-columns: 36px 1fr;
     gap: 6px;
     padding: 6px;
@@ -1770,9 +1798,9 @@ p {
   }
 
   .seat .card {
-    width: 23px;
+    width: 30px;
     border-radius: 4px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .badges {
@@ -1854,6 +1882,11 @@ p {
     transform: translateX(calc(100% - 42px));
   }
 
+  .spectatorsDrawer {
+    width: min(280px, calc(100vw - 42px));
+    transform: translateX(calc(-100% + 42px));
+  }
+
   .sideToggle {
     width: 42px;
     min-height: 82px;
@@ -1863,6 +1896,11 @@ p {
   .rulesPanel {
     margin-left: 42px;
     padding: 16px;
+  }
+
+  .spectatorsDrawerPanel {
+    margin-right: 42px;
+    margin-left: 0;
   }
 }
 

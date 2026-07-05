@@ -74,10 +74,12 @@ $("#refreshRoomsBtn").addEventListener("click", loadRooms);
 $("#backLobbyBtn").addEventListener("click", attemptBackLobby);
 $("#startHandBtn").addEventListener("click", () => send({ type: "startHand" }));
 $("#readyBtn").addEventListener("click", toggleReady);
-$("#standBtn").addEventListener("click", () => send({ type: "stand" }));
+$("#standBtn").addEventListener("click", attemptStand);
 $("#randomAvatarBtn").addEventListener("click", () => send({ type: "switchAvatar" }));
 $("#sendEmoteBtn").addEventListener("click", () => sendEmote());
 $("#dealerTipBtn").addEventListener("click", tipDealer);
+$("#spectatorsToggle").addEventListener("click", toggleSpectatorsDrawer);
+$("#spectatorsClose").addEventListener("click", closeSpectatorsDrawer);
 $("#rulesToggle").addEventListener("click", toggleRulesDrawer);
 $("#rulesClose").addEventListener("click", closeRulesDrawer);
 $("#feedbackToggle").addEventListener("click", toggleFeedbackDrawer);
@@ -94,8 +96,8 @@ $("#betBtn").addEventListener("click", () => sendAction("bet"));
 $("#raiseBtn").addEventListener("click", () => sendAction("raise"));
 $("#amountRange").addEventListener("input", syncAmountFromRange);
 $("#amountInput").addEventListener("input", syncAmountFromInput);
-document.querySelectorAll("[data-bet-multiple]").forEach((button) => {
-  button.addEventListener("click", () => chooseBetMultiple(Number(button.dataset.betMultiple)));
+document.querySelectorAll("[data-wager-preset]").forEach((button) => {
+  button.addEventListener("click", () => chooseWagerPreset(button.dataset.wagerPreset));
 });
 $("#allInBtn").addEventListener("click", chooseAllIn);
 $("#presetFoldBtn").addEventListener("click", () => sendPresetAction("fold"));
@@ -319,13 +321,13 @@ function syncAmountFromInput() {
   rememberWagerAmount(value);
 }
 
-function chooseBetMultiple(multiple) {
+function chooseWagerPreset(preset) {
   const snapshot = state.roomState;
   if (!snapshot) return;
   const mySeat = snapshot.seats.find((seat) => seat && seat.userId === state.user.id);
   if (!mySeat) return;
-  const target = wagerMultipleBase(snapshot) * multiple;
-  setBetAmount(Math.max(minimumWagerTotal(snapshot, mySeat), target));
+  const target = presetWagerTotal(snapshot, mySeat, preset);
+  setBetAmount(target);
 }
 
 function chooseAllIn() {
@@ -365,14 +367,48 @@ function clampNumber(value, min, max) {
 function minimumWagerTotal(snapshot, mySeat) {
   if (!mySeat) return Math.max(1, snapshot?.room?.bigBlind || 1);
   if (snapshot.game.currentBet > 0) {
-    const minRaise = Number(snapshot.game.minRaise || snapshot.room.bigBlind || 1);
-    return Math.min(mySeat.bet + mySeat.chips, snapshot.game.currentBet + minRaise);
+    const minimumFullTotal = Number(snapshot.game.minimumFullWagerTotal || 0);
+    const fallback = snapshot.game.currentBet + Number(snapshot.game.minRaise || snapshot.room.bigBlind || 1);
+    return Math.min(mySeat.bet + mySeat.chips, minimumFullTotal || fallback);
   }
   return Math.min(mySeat.bet + mySeat.chips, snapshot.room.bigBlind);
 }
 
-function wagerMultipleBase(snapshot) {
-  return Math.max(1, Number(snapshot?.game?.currentBet || snapshot?.room?.bigBlind || 1));
+function presetWagerTotal(snapshot, mySeat, preset) {
+  const min = minimumWagerTotal(snapshot, mySeat);
+  const max = mySeat.bet + mySeat.chips;
+  const pot = Math.max(0, Number(snapshot.game.pot || 0));
+  const currentBet = Math.max(0, Number(snapshot.game.currentBet || 0));
+  const callAmount = Math.max(0, currentBet - (mySeat.bet || 0));
+  const isPreflop = snapshot.game.status === "preflop";
+
+  let target = min;
+  if (preset === "slot2") {
+    target = currentBet > 0
+      ? Math.floor(currentBet * 2.5)
+      : isPreflop
+        ? snapshot.room.bigBlind * 2
+        : Math.floor(pot / 2);
+  } else if (preset === "slot3") {
+    target = currentBet > 0
+      ? currentBet * 3
+      : isPreflop
+        ? snapshot.room.bigBlind * 3
+        : Math.floor(pot * 2 / 3);
+  } else if (preset === "slot4") {
+    target = currentBet > 0
+      ? mySeat.bet + callAmount + pot + callAmount
+      : isPreflop
+        ? snapshot.room.bigBlind * 4
+        : pot;
+  }
+  return clampNumber(Math.max(min, target), min, max);
+}
+
+function quickWagerLabels(snapshot) {
+  if (snapshot.game.currentBet > 0) return ["最小", "2.5x", "3x", "底池"];
+  if (snapshot.game.status === "preflop") return ["最小", "2x", "3x", "4x"];
+  return ["最小", "1/2池", "2/3池", "底池"];
 }
 
 function sendEmote(emote = $("#emoteSelect").value, targetSeat) {
@@ -495,6 +531,17 @@ function toggleReady() {
   send({ type: mySeat.ready ? "unready" : "ready" });
 }
 
+function attemptStand() {
+  const snapshot = state.roomState;
+  const mySeat = snapshot?.seats.find((seat) => seat && seat.userId === state.user?.id);
+  const activeHand = snapshot && !["waiting", "showdown"].includes(snapshot.game.status);
+  if (mySeat?.ready && !activeHand) {
+    showToast("请先点“取消准备”，再起身。", "warn");
+    return;
+  }
+  send({ type: "stand" });
+}
+
 function setConn(text) {
   $("#connLabel").textContent = text;
 }
@@ -568,6 +615,19 @@ function closeRulesDrawer() {
   updateSideDrawerLabels();
 }
 
+function toggleSpectatorsDrawer() {
+  const drawer = $("#spectatorsDrawer");
+  const willOpen = !drawer.classList.contains("open");
+  closeSideDrawers();
+  if (willOpen) drawer.classList.add("open");
+  updateSideDrawerLabels();
+}
+
+function closeSpectatorsDrawer() {
+  $("#spectatorsDrawer").classList.remove("open");
+  updateSideDrawerLabels();
+}
+
 function toggleFeedbackDrawer() {
   const drawer = $("#feedbackDrawer");
   const willOpen = !drawer.classList.contains("open");
@@ -598,6 +658,7 @@ function closeSupportDrawer() {
 }
 
 function closeSideDrawers() {
+  $("#spectatorsDrawer")?.classList.remove("open");
   $("#rulesDrawer")?.classList.remove("open");
   $("#feedbackDrawer")?.classList.remove("open");
   $("#supportDrawer")?.classList.remove("open");
@@ -605,9 +666,12 @@ function closeSideDrawers() {
 }
 
 function updateSideDrawerLabels() {
+  const spectatorsOpen = $("#spectatorsDrawer")?.classList.contains("open");
   const rulesOpen = $("#rulesDrawer")?.classList.contains("open");
   const feedbackOpen = $("#feedbackDrawer")?.classList.contains("open");
   const supportOpen = $("#supportDrawer")?.classList.contains("open");
+  const spectatorCount = $("#spectators")?.dataset.count || "0";
+  if ($("#spectatorsToggle")) $("#spectatorsToggle").innerHTML = `观众 ${spectatorCount} ${spectatorsOpen ? "&lt;" : "&gt;"}`;
   if ($("#rulesToggle")) $("#rulesToggle").innerHTML = `牌型 ${rulesOpen ? "&gt;" : "&lt;"}`;
   if ($("#feedbackToggle")) $("#feedbackToggle").innerHTML = `意见 ${feedbackOpen ? "&gt;" : "&lt;"}`;
   if ($("#supportToggle")) $("#supportToggle").innerHTML = `随缘 ${supportOpen ? "&gt;" : "&lt;"}`;
@@ -905,16 +969,19 @@ function renderRoom() {
   $("#checkBtn").disabled = !isMyTurn || callAmount > 0;
   $("#callBtn").disabled = !isMyTurn || callAmount === 0;
   $("#foldBtn").disabled = !isMyTurn;
-  $("#betBtn").disabled = !isMyTurn || snapshot.game.currentBet > 0 || maxWagerTotal < snapshot.room.bigBlind;
-  $("#raiseBtn").disabled = !isMyTurn || snapshot.game.currentBet === 0 || maxWagerTotal <= snapshot.game.currentBet;
+  $("#betBtn").disabled = !isMyTurn || snapshot.game.currentBet > 0 || maxWagerTotal <= 0;
+  $("#raiseBtn").disabled = !isMyTurn || snapshot.game.currentBet === 0 || !mySeat?.canRaise;
   renderWagerControls(snapshot, mySeat, isMyTurn, activeHand);
   $("#randomAvatarBtn").disabled = !mySeat || activeHand || !state.avatars.length;
   $("#dealerTipBtn").disabled = !mySeat || activeHand;
   renderPresetControls(snapshot, mySeat, activeHand);
   $("#startHandBtn").disabled = !snapshot.room.canStart;
-  $("#startHandBtn").textContent = snapshot.room.canStart
-    ? "开始下一手"
-    : `等待准备 ${snapshot.room.readySeats}/${snapshot.room.seats}`;
+  const nextHandRemainingMs = Math.max(0, Number(snapshot.game.nextHandStartsAt || 0) - (Date.now() - state.serverOffsetMs));
+  $("#startHandBtn").textContent = nextHandRemainingMs > 0
+    ? `自动开始 ${Math.ceil(nextHandRemainingMs / 1000)}s`
+    : snapshot.room.canStart
+      ? "开始下一手"
+      : `等待准备 ${snapshot.room.readySeats}/${snapshot.room.seats}`;
 
   $("#seats").innerHTML = snapshot.seats.map((seat, index) => seatHtml(seat, index, snapshot.game, mySeat, activeHand)).join("");
   $("#seats").querySelectorAll("[data-sit]").forEach((button) => {
@@ -940,7 +1007,9 @@ function renderSpectators(spectators) {
   const panel = $("#spectators");
   if (!panel) return;
   const items = spectators || [];
+  panel.dataset.count = String(items.length);
   panel.classList.toggle("empty", items.length === 0);
+  updateSideDrawerLabels();
   panel.innerHTML = `
     <div class="spectatorsTitle">观众 <strong>${items.length}</strong></div>
     <div class="spectatorsList">
@@ -972,7 +1041,12 @@ function renderWagerControls(snapshot, mySeat, isMyTurn, activeHand) {
     : "入座后可调整下注";
   $("#wagerMode").textContent = snapshot.game.currentBet > 0 ? "加注到" : "下注额";
   updateAmountValue(current);
-  document.querySelectorAll("[data-bet-multiple], #allInBtn").forEach((button) => {
+  const labels = quickWagerLabels(snapshot);
+  document.querySelectorAll("[data-wager-preset]").forEach((button, index) => {
+    button.textContent = labels[index] || button.textContent;
+    button.disabled = !canAdjust;
+  });
+  document.querySelectorAll("#allInBtn").forEach((button) => {
     button.disabled = !canAdjust;
   });
   $("#presetBetRaiseBtn").textContent = snapshot.game.currentBet > 0 ? "预加注" : "预下注";
@@ -981,6 +1055,7 @@ function renderWagerControls(snapshot, mySeat, isMyTurn, activeHand) {
 
 function renderPresetControls(snapshot, mySeat, activeHand) {
   const canPreset = Boolean(mySeat) && activeHand && mySeat.inHand && !mySeat.folded && !mySeat.allIn;
+  const canPresetBetRaise = canPreset && (snapshot.game.currentBet === 0 || Boolean(mySeat?.canRaise));
   const pending = mySeat?.pendingAction;
   const amount = pending?.amount ? ` ${pending.amount}` : "";
   const text = pending
@@ -995,14 +1070,16 @@ function renderPresetControls(snapshot, mySeat, activeHand) {
     const button = $(selector);
     if (button) button.disabled = !canPreset;
   });
+  $("#presetBetRaiseBtn").disabled = !canPresetBetRaise;
   $("#presetClearBtn").disabled = !canPreset || !pending;
 }
 
 function seatHtml(seat, index, game, mySeat, activeHand) {
   const posClass = `pos${index}`;
   if (!seat) {
-    const disabled = mySeat && activeHand ? " disabled" : "";
-    const label = mySeat ? "换座" : "坐下";
+    const seatLocked = mySeat && (activeHand || mySeat.ready);
+    const disabled = seatLocked ? " disabled" : "";
+    const label = mySeat?.ready ? "已准备" : mySeat ? "换座" : "坐下";
     return `<div class="seat empty ${posClass}" data-seat="${index}"><button class="secondary" data-sit="${index}"${disabled}>${label}</button></div>`;
   }
   const classes = ["seat", posClass];

@@ -96,11 +96,9 @@
             <h2 id="roomTitle">牌桌</h2>
             <p id="handInfo"></p>
           </div>
-          <button id="startHandBtn">开始下一手</button>
         </div>
 
         <section class="tableSurface">
-          <aside id="spectators" class="spectatorsPanel"></aside>
           <div class="boardLine">
             <div>
               <span class="label">公共牌</span>
@@ -115,6 +113,7 @@
               <span>荷官</span>
             </button>
           </div>
+          <button id="startHandBtn" class="tableStartBtn">开始下一手</button>
           <div id="seats" class="seats"></div>
           <div id="turnCountdown" class="turnCountdown hidden">
             <span id="turnCountdownName">等待</span>
@@ -142,10 +141,10 @@
               </div>
               <input id="amountRange" class="amountRange" type="range" min="1" max="1000" step="1" value="20" aria-label="下注滑块">
               <div class="quickBets" aria-label="快捷下注">
-                <button type="button" class="secondary" data-bet-multiple="2">2x</button>
-                <button type="button" class="secondary" data-bet-multiple="3">3x</button>
-                <button type="button" class="secondary" data-bet-multiple="5">5x</button>
-                <button type="button" class="secondary" data-bet-multiple="10">10x</button>
+                <button type="button" class="secondary" data-wager-preset="min">最小</button>
+                <button type="button" class="secondary" data-wager-preset="slot2">2x</button>
+                <button type="button" class="secondary" data-wager-preset="slot3">3x</button>
+                <button type="button" class="secondary" data-wager-preset="slot4">4x</button>
                 <button type="button" class="secondary allInBtn" id="allInBtn">All in</button>
               </div>
               <div id="wagerHint" class="wagerHint">入座后可调整下注</div>
@@ -192,6 +191,16 @@
         </section>
       </section>
     </section>
+    <aside id="spectatorsDrawer" class="sideDrawer spectatorsDrawer">
+      <button id="spectatorsToggle" class="sideToggle spectatorsToggle" type="button" aria-label="查看观众">观众 0 &gt;</button>
+      <div class="rulesPanel spectatorsDrawerPanel">
+        <div class="rulesHead">
+          <h2>观众</h2>
+          <button id="spectatorsClose" class="ghost" type="button">收起</button>
+        </div>
+        <div id="spectators" class="spectatorsPanel"></div>
+      </div>
+    </aside>
     <aside id="rulesDrawer" class="sideDrawer rulesDrawer">
       <button id="rulesToggle" class="sideToggle rulesToggle" type="button" aria-label="查看牌型规则">牌型 &lt;</button>
       <div class="rulesPanel">

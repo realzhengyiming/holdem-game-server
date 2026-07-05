@@ -229,7 +229,7 @@ async function main() {
   for (let seat = 0; seat < 3; seat += 1) {
     raiseClients[seat].send({ type: "sit", seat });
     const raiseSit = await waitForRoom(raiseClients[seat], (message) => Boolean(message.seats[seat]), `raise sit ${seat}`);
-    assert.equal(raiseSit.seats[seat].ready, true);
+    assert.equal(raiseSit.seats[seat].ready, false);
     raiseClients[seat].send({ type: "ready" });
   }
   await waitForRoom(raiseClients[0], (message) => message.room.canStart, "raise room ready");
@@ -241,6 +241,53 @@ async function main() {
   assert.equal(raisedState.game.pot, 35);
   raiseClients.forEach((client) => client.socket.close());
   log("合法加注金额可成功提交并广播");
+
+  const shortAllInRoomResponse = await api("/api/rooms", {
+    token: users[0].token,
+    method: "POST",
+    body: { name: `短全下测试 ${RUN_ID}`, smallBlind: 5, bigBlind: 10, startingChips: 200 }
+  });
+  const shortClients = users.map(connectClient);
+  await Promise.all(shortClients.map((client) => client.waitOpen()));
+  for (const client of shortClients) client.send({ type: "joinRoom", roomId: shortAllInRoomResponse.room.id });
+  await Promise.all(shortClients.map((client) => waitForRoom(client, (message) => message.room.id === shortAllInRoomResponse.room.id, "join short all-in room")));
+  for (let seat = 0; seat < 4; seat += 1) {
+    shortClients[seat].send({ type: "sit", seat });
+    await waitForRoom(shortClients[seat], (message) => Boolean(message.seats[seat]), `short all-in sit ${seat}`);
+    shortClients[seat].send({ type: "ready" });
+  }
+  await Promise.all(shortClients.map((client) => waitForRoom(client, (message) => (
+    message.seats.filter(Boolean).length === 4
+  ), "short all-in table seated")));
+  shortClients[2].send({ type: "dealerTip", amount: 185 });
+  const tipResult = await Promise.race([
+    waitForRoom(shortClients[2], (message) => message.seats[2]?.chips === 15, "short stack prepared"),
+    shortClients[2].waitFor((message) => message.type === "error", "dealer tip error", 5000)
+  ]);
+  assert.notEqual(tipResult.type, "error", tipResult.error || "dealer tip should prepare short stack");
+  await waitForRoom(shortClients[0], (message) => message.room.canStart, "short all-in room ready");
+  shortClients[0].send({ type: "startHand" });
+  await waitForRoom(shortClients[0], (message) => message.game.status === "preflop" && message.game.actingSeat === 3, "short all-in preflop");
+  shortClients[3].send({ type: "action", action: "call" });
+  await waitForRoom(shortClients[0], (message) => message.game.actingSeat === 0 && message.seats[3]?.bet === 10, "seat 3 calls blind");
+  shortClients[0].send({ type: "action", action: "call" });
+  await waitForRoom(shortClients[0], (message) => message.game.actingSeat === 1 && message.seats[0]?.bet === 10, "seat 0 calls blind");
+  shortClients[1].send({ type: "action", action: "call" });
+  await waitForRoom(shortClients[0], (message) => message.game.actingSeat === 2 && message.seats[1]?.bet === 10, "small blind calls blind");
+  shortClients[2].send({ type: "action", action: "raise", amount: 15 });
+  const shortAllInState = await waitForRoom(shortClients[3], (message) => (
+    message.game.currentBet === 15
+      && message.game.actingSeat === 3
+      && message.seats[2]?.allIn
+      && message.seats[3]?.canRaise === false
+  ), "short all-in does not reopen raise");
+  assert.equal(shortAllInState.game.minimumFullWagerTotal, 25);
+  shortClients[3].send({ type: "action", action: "raise", amount: 25 });
+  await waitForError(shortClients[3], "不能再次加注");
+  shortClients[3].send({ type: "action", action: "call" });
+  await waitForRoom(shortClients[0], (message) => message.seats[3]?.bet === 15 && message.game.actingSeat === 0, "seat 3 may only call short all-in");
+  shortClients.forEach((client) => client.socket.close());
+  log("短筹码 all-in 不会重新打开已行动玩家的加注权");
 
   const roomResponse = await api("/api/rooms", {
     token: users[0].token,
@@ -266,21 +313,37 @@ async function main() {
   for (let seat = 0; seat < 3; seat += 1) {
     clients[seat].send({ type: "sit", seat });
     const sat = await waitForRoom(clients[seat], (message) => Boolean(message.seats[seat]), `sit ${seat}`);
-    assert.equal(sat.seats[seat].ready, true);
+    assert.equal(sat.seats[seat].ready, false);
   }
   clients[0].send({ type: "sit", seat: 4 });
   const movedOut = await waitForRoom(clients[0], (message) => !message.seats[0] && message.seats[4]?.userId === users[0].id, "move seat 0 to 4");
   assert.equal(movedOut.seats[4].chips, 1000);
-  assert.equal(movedOut.seats[4].ready, true);
+  assert.equal(movedOut.seats[4].ready, false);
   clients[0].send({ type: "sit", seat: 0 });
   const movedBack = await waitForRoom(clients[0], (message) => message.seats[0]?.userId === users[0].id && !message.seats[4], "move seat 4 to 0");
-  assert.equal(movedBack.seats[0].ready, true);
+  assert.equal(movedBack.seats[0].ready, false);
+  clients[0].send({ type: "ready" });
+  await waitForRoom(clients[0], (message) => message.seats[0]?.ready === true, "ready locks seat");
+  clients[0].send({ type: "sit", seat: 4 });
+  await waitForError(clients[0], "已准备后不能换座位");
+  clients[0].send({ type: "unready" });
+  await waitForRoom(clients[0], (message) => message.seats[0]?.ready === false, "unready after locked move");
   clients[1].send({ type: "stand" });
   await waitForRoom(clients[0], (message) => !message.seats[1], "stand from seat 1");
   clients[1].send({ type: "sit", seat: 1 });
   const satBack = await waitForRoom(clients[0], (message) => message.seats[1]?.userId === users[1].id, "sit back seat 1");
-  assert.equal(satBack.seats[1].ready, true);
-  log("入座默认准备，非进行中可换座、起身，空位释放后可重新坐下");
+  assert.equal(satBack.seats[1].ready, false);
+  clients[1].send({ type: "ready" });
+  await waitForRoom(clients[1], (message) => message.seats[1]?.ready === true, "ready before stand block");
+  clients[1].send({ type: "stand" });
+  await waitForError(clients[1], "请先取消准备");
+  clients[1].send({ type: "unready" });
+  await waitForRoom(clients[1], (message) => message.seats[1]?.ready === false, "unready before stand");
+  clients[1].send({ type: "stand" });
+  await waitForRoom(clients[0], (message) => !message.seats[1], "stand after unready");
+  clients[1].send({ type: "sit", seat: 1 });
+  await waitForRoom(clients[0], (message) => message.seats[1]?.userId === users[1].id && !message.seats[1]?.ready, "sit back after stand");
+  log("入座后默认未准备，可自由换座；准备后换座和起身会被保护");
 
   for (let seat = 0; seat < 3; seat += 1) {
     clients[seat].send({ type: "ready" });
@@ -339,7 +402,7 @@ async function main() {
   const lateJoin = await waitForRoom(clients[3], (message) => Boolean(message.seats[3]), "late sit");
   assert.equal(lateJoin.seats[3].inHand, false);
   assert.equal(lateJoin.seats[3].hole.length, 0);
-  assert.equal(lateJoin.seats[3].ready, true);
+  assert.equal(lateJoin.seats[3].ready, false);
   assert.ok(!lateJoin.spectators.some((spectator) => spectator.userId === users[3].id));
   log("牌局中有空位可入座，但新玩家不会加入当前手牌");
 
@@ -365,6 +428,8 @@ async function main() {
   assert.equal(showdown.game.status, "showdown");
   assert.equal(showdown.game.pot, 0);
   assert.equal(showdown.game.board.length, 5);
+  assert.ok(showdown.game.nextHandStartsAt > showdown.game.serverNow);
+  assert.ok(showdown.seats.filter((seat) => seat?.chips > 0).every((seat) => seat.ready));
   assert.ok(showdown.game.winners.length >= 1);
   assert.match(showdown.game.fairness.seed, /^[a-f0-9]{64}$/);
   assert.equal(showdown.game.fairness.deck.length, 52);
