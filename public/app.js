@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const CLIENT_VERSION = "0.1.7";
+const CLIENT_VERSION = "0.1.8";
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
   { key: "amazing", text: "真棒" },
@@ -90,6 +90,12 @@ $("#checkBtn").addEventListener("click", () => sendAction("check"));
 $("#callBtn").addEventListener("click", () => sendAction("call"));
 $("#betBtn").addEventListener("click", () => sendAction("bet"));
 $("#raiseBtn").addEventListener("click", () => sendAction("raise"));
+$("#amountRange").addEventListener("input", syncAmountFromRange);
+$("#amountInput").addEventListener("input", syncAmountFromInput);
+document.querySelectorAll("[data-bet-multiple]").forEach((button) => {
+  button.addEventListener("click", () => chooseBetMultiple(Number(button.dataset.betMultiple)));
+});
+$("#allInBtn").addEventListener("click", chooseAllIn);
 $("#presetFoldBtn").addEventListener("click", () => sendPresetAction("fold"));
 $("#presetCheckCallBtn").addEventListener("click", () => sendPresetAction("checkCall"));
 $("#presetBetRaiseBtn").addEventListener("click", () => sendPresetAction("betRaise"));
@@ -283,6 +289,67 @@ function sendAction(action) {
 
 function sendPresetAction(action) {
   send({ type: "presetAction", action, amount: Number($("#amountInput").value || 0) });
+}
+
+function syncAmountFromRange() {
+  const range = $("#amountRange");
+  $("#amountInput").value = range.value;
+  updateAmountValue(Number(range.value));
+}
+
+function syncAmountFromInput() {
+  const input = $("#amountInput");
+  const range = $("#amountRange");
+  const min = Number(range.min || 1);
+  const max = Number(range.max || min);
+  const value = clampNumber(Number(input.value || min), min, max);
+  input.value = value;
+  range.value = value;
+  updateAmountValue(value);
+}
+
+function chooseBetMultiple(multiple) {
+  const snapshot = state.roomState;
+  if (!snapshot) return;
+  const mySeat = snapshot.seats.find((seat) => seat && seat.userId === state.user.id);
+  if (!mySeat) return;
+  const target = snapshot.room.bigBlind * multiple;
+  setBetAmount(Math.max(minimumWagerTotal(snapshot, mySeat), target));
+}
+
+function chooseAllIn() {
+  const snapshot = state.roomState;
+  if (!snapshot) return;
+  const mySeat = snapshot.seats.find((seat) => seat && seat.userId === state.user.id);
+  if (!mySeat) return;
+  setBetAmount(mySeat.bet + mySeat.chips);
+}
+
+function setBetAmount(amount) {
+  const range = $("#amountRange");
+  const min = Number(range.min || 1);
+  const max = Number(range.max || min);
+  const value = clampNumber(Math.floor(Number(amount) || min), min, max);
+  range.value = value;
+  $("#amountInput").value = value;
+  updateAmountValue(value);
+}
+
+function updateAmountValue(value) {
+  $("#amountValue").textContent = Number.isFinite(value) ? String(Math.floor(value)) : "0";
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function minimumWagerTotal(snapshot, mySeat) {
+  if (!mySeat) return Math.max(1, snapshot?.room?.bigBlind || 1);
+  if (snapshot.game.currentBet > 0) {
+    return Math.min(mySeat.bet + mySeat.chips, snapshot.game.currentBet + snapshot.game.minRaise);
+  }
+  return Math.min(mySeat.bet + mySeat.chips, snapshot.room.bigBlind);
 }
 
 function sendEmote(emote = $("#emoteSelect").value, targetSeat) {
@@ -784,17 +851,22 @@ function renderRoom() {
   const mySeat = snapshot.seats.find((seat) => seat && seat.userId === state.user.id);
   const isMyTurn = mySeat && snapshot.game.actingSeat === mySeat.seat;
   const callAmount = mySeat ? Math.max(0, snapshot.game.currentBet - mySeat.bet) : 0;
+  const maxWagerTotal = mySeat ? mySeat.bet + mySeat.chips : 0;
   const activeHand = !["waiting", "showdown"].includes(snapshot.game.status);
   const canReady = Boolean(mySeat) && !activeHand;
   $("#callBtn").textContent = callAmount > 0 ? `跟注 ${callAmount}` : "跟注";
   $("#readyBtn").textContent = mySeat?.ready ? "取消准备" : "准备";
   $("#readyBtn").disabled = !canReady;
+  $("#readyBtn").classList.toggle("readyActive", canReady && !mySeat?.ready);
+  $(".playbar").classList.toggle("myTurn", Boolean(isMyTurn));
+  $(".playbar").classList.toggle("canPrepare", canReady && !mySeat?.ready);
   $("#standBtn").disabled = !mySeat || activeHand;
   $("#checkBtn").disabled = !isMyTurn || callAmount > 0;
   $("#callBtn").disabled = !isMyTurn || callAmount === 0;
   $("#foldBtn").disabled = !isMyTurn;
-  $("#betBtn").disabled = !isMyTurn || snapshot.game.currentBet > 0;
-  $("#raiseBtn").disabled = !isMyTurn || snapshot.game.currentBet === 0;
+  $("#betBtn").disabled = !isMyTurn || snapshot.game.currentBet > 0 || maxWagerTotal < snapshot.room.bigBlind;
+  $("#raiseBtn").disabled = !isMyTurn || snapshot.game.currentBet === 0 || maxWagerTotal <= snapshot.game.currentBet;
+  renderWagerControls(snapshot, mySeat, isMyTurn, activeHand);
   $("#randomAvatarBtn").disabled = !mySeat || activeHand || !state.avatars.length;
   $("#dealerTipBtn").disabled = !mySeat || activeHand;
   renderPresetControls(snapshot, mySeat, activeHand);
@@ -821,6 +893,34 @@ function renderRoom() {
     `<div><strong>${escapeHtml(message.username)}:</strong> ${escapeHtml(message.text)}</div>`
   )).join("");
   $("#messages").scrollTop = $("#messages").scrollHeight;
+}
+
+function renderWagerControls(snapshot, mySeat, isMyTurn, activeHand) {
+  const max = mySeat ? Math.max(1, mySeat.bet + mySeat.chips) : Math.max(1, snapshot.room.bigBlind);
+  const min = Math.max(1, minimumWagerTotal(snapshot, mySeat));
+  const canAdjust = Boolean(mySeat) && activeHand && mySeat.inHand && !mySeat.folded && !mySeat.allIn && min <= max;
+  const range = $("#amountRange");
+  const input = $("#amountInput");
+  const current = clampNumber(Number(input.value || min), min, max);
+  range.min = min;
+  range.max = max;
+  range.step = 1;
+  range.value = current;
+  input.min = min;
+  input.max = max;
+  input.value = current;
+  range.disabled = !canAdjust;
+  input.disabled = !canAdjust;
+  $("#wagerHint").textContent = mySeat
+    ? `最小 ${min} · 最大 ${max} · 剩余 ${mySeat.chips}`
+    : "入座后可调整下注";
+  $("#wagerMode").textContent = snapshot.game.currentBet > 0 ? "加注到" : "下注额";
+  updateAmountValue(current);
+  document.querySelectorAll("[data-bet-multiple], #allInBtn").forEach((button) => {
+    button.disabled = !canAdjust;
+  });
+  $("#presetBetRaiseBtn").textContent = snapshot.game.currentBet > 0 ? "预加注" : "预下注";
+  $("#actionButtons").classList.toggle("isMyTurn", Boolean(isMyTurn));
 }
 
 function renderPresetControls(snapshot, mySeat, activeHand) {

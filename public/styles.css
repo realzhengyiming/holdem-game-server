@@ -20,6 +20,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background: radial-gradient(circle at 30% 10%, #193241 0, transparent 38%), var(--bg);
   color: var(--text);
   font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
@@ -865,6 +866,19 @@ p {
   grid-template-columns: 1fr auto;
   gap: 14px;
   align-items: center;
+  border-color: rgb(74 103 118 / 72%);
+  background:
+    linear-gradient(135deg, rgb(26 39 48 / 94%), rgb(16 24 31 / 94%));
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.playbar.myTurn {
+  border-color: rgb(53 196 134 / 78%);
+  box-shadow: 0 0 0 1px rgb(53 196 134 / 18%), 0 18px 48px rgb(0 0 0 / 30%);
+}
+
+.playbar.canPrepare {
+  border-color: rgb(215 184 90 / 70%);
 }
 
 .turn {
@@ -872,6 +886,15 @@ p {
 }
 
 .actions {
+  display: grid;
+  grid-template-columns: auto minmax(300px, 380px) auto;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.seatActionCluster,
+.actionButtons {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -879,12 +902,100 @@ p {
   justify-content: flex-end;
 }
 
-.actions input {
-  width: 96px;
+.readyBtn {
+  min-width: 76px;
+  background: linear-gradient(180deg, #ffe28a, #d6a634);
+  color: #211504;
+  box-shadow: 0 0 0 1px rgb(255 237 162 / 22%), 0 10px 24px rgb(215 184 90 / 18%);
+}
+
+.readyBtn.readyActive {
+  min-width: 88px;
+  animation: readyPulse 1.4s ease-in-out infinite;
+}
+
+.wagerPanel {
+  display: grid;
+  gap: 8px;
+  min-width: 300px;
+  padding: 10px;
+  border: 1px solid rgb(77 100 113 / 72%);
+  border-radius: 8px;
+  background: rgb(8 14 20 / 54%);
+}
+
+.wagerHeader {
+  display: grid;
+  grid-template-columns: auto 1fr 82px;
+  gap: 10px;
+  align-items: center;
+}
+
+.wagerHeader span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.wagerHeader strong {
+  color: #ffe08a;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.wagerHeader input {
+  min-height: 34px;
+  padding: 0 8px;
+  text-align: center;
+  font-weight: 800;
+}
+
+.amountRange {
+  width: 100%;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent);
+}
+
+.quickBets {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.quickBets button {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgb(83 109 121 / 74%);
+  font-size: 13px;
+}
+
+.quickBets .allInBtn {
+  color: #ffe6b0;
+  border-color: rgb(215 184 90 / 54%);
+}
+
+.wagerHint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.actionButtons {
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.actionButtons.isMyTurn {
+  border-color: rgb(53 196 134 / 35%);
+  background: rgb(53 196 134 / 7%);
 }
 
 .presetControls {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -905,6 +1016,18 @@ p {
   min-height: 34px;
   padding: 0 12px;
   font-size: 13px;
+}
+
+@keyframes readyPulse {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 1px rgb(255 237 162 / 26%), 0 10px 24px rgb(215 184 90 / 20%);
+  }
+
+  50% {
+    transform: translateY(-1px);
+    box-shadow: 0 0 0 1px rgb(255 237 162 / 36%), 0 14px 32px rgb(215 184 90 / 34%);
+  }
 }
 
 .chat {
@@ -1370,7 +1493,7 @@ p {
 
 @media (max-width: 860px) {
   .shell {
-    width: min(100vw - 12px, 680px);
+    width: min(100%, 680px);
     padding: 10px 0 18px;
   }
 
@@ -1524,23 +1647,45 @@ p {
   }
 
   .playbar {
+    grid-template-columns: 1fr;
     margin-top: 12px;
     gap: 10px;
   }
 
   .actions {
+    grid-template-columns: 1fr;
     justify-content: stretch;
+  }
+
+  .seatActionCluster,
+  .actionButtons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .actionButtons {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding: 4px;
+  }
+
+  .wagerPanel {
+    min-width: 0;
   }
 
   .actions button,
   .actions input {
-    flex: 1 1 86px;
     min-height: 44px;
   }
 
   .actions button {
     min-height: 46px;
     padding: 0 10px;
+  }
+
+  .quickBets button {
+    min-height: 38px;
+    padding: 0 6px;
   }
 
   .chatForm {

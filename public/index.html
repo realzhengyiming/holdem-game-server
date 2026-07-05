@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Texas Hold'em MVP</title>
-  <link rel="stylesheet" href="/styles.css?v=0.1.7">
+  <link rel="stylesheet" href="/styles.css?v=0.1.8">
 </head>
 <body>
   <main class="shell">
@@ -49,7 +49,7 @@
           <span id="connLabel">离线</span>
         </div>
         <div class="topActions">
-          <span id="versionLabel" class="versionLabel">v0.1.7</span>
+          <span id="versionLabel" class="versionLabel">v0.1.8</span>
           <button id="bgmToggleBtn" class="ghost soundToggle" type="button" aria-pressed="false">BGM 开</button>
           <button id="logoutBtn" class="ghost">退出</button>
         </div>
@@ -128,15 +128,34 @@
             <div id="lastAction" class="hint"></div>
           </div>
           <div class="actions">
-            <button id="readyBtn" class="secondary">准备</button>
-            <button id="standBtn" class="secondary">起身</button>
-            <button id="randomAvatarBtn" class="secondary">随机头像</button>
-            <input id="amountInput" type="number" min="1" step="1" value="20">
-            <button id="foldBtn" class="danger">弃牌</button>
-            <button id="checkBtn">过牌</button>
-            <button id="callBtn">跟注</button>
-            <button id="betBtn">下注</button>
-            <button id="raiseBtn">加注</button>
+            <div class="seatActionCluster">
+              <button id="readyBtn" class="readyBtn">准备</button>
+              <button id="standBtn" class="secondary">起身</button>
+              <button id="randomAvatarBtn" class="secondary">随机头像</button>
+            </div>
+            <div class="wagerPanel" aria-label="下注金额">
+              <div class="wagerHeader">
+                <span id="wagerMode">下注额</span>
+                <strong id="amountValue">20</strong>
+                <input id="amountInput" type="number" min="1" step="1" value="20" aria-label="下注金额">
+              </div>
+              <input id="amountRange" class="amountRange" type="range" min="1" max="1000" step="1" value="20" aria-label="下注滑块">
+              <div class="quickBets" aria-label="快捷下注">
+                <button type="button" class="secondary" data-bet-multiple="2">2x</button>
+                <button type="button" class="secondary" data-bet-multiple="3">3x</button>
+                <button type="button" class="secondary" data-bet-multiple="5">5x</button>
+                <button type="button" class="secondary" data-bet-multiple="10">10x</button>
+                <button type="button" class="secondary allInBtn" id="allInBtn">All in</button>
+              </div>
+              <div id="wagerHint" class="wagerHint">入座后可调整下注</div>
+            </div>
+            <div id="actionButtons" class="actionButtons">
+              <button id="foldBtn" class="danger">弃牌</button>
+              <button id="checkBtn">过牌</button>
+              <button id="callBtn">跟注</button>
+              <button id="betBtn">下注</button>
+              <button id="raiseBtn">加注</button>
+            </div>
             <div class="presetControls" aria-label="提前动作">
               <span id="presetStatus">预设：无</span>
               <button id="presetFoldBtn" type="button" class="secondary">预弃牌</button>
@@ -234,6 +253,6 @@
     </aside>
   </main>
 
-  <script src="/app.js?v=0.1.7"></script>
+  <script src="/app.js?v=0.1.8"></script>
 </body>
 </html>
