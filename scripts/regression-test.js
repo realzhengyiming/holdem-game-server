@@ -165,13 +165,27 @@ async function driveHandToShowdown(clientsBySeat) {
     assert.ok(Number.isInteger(actingSeat), `acting seat should be set during ${state.game.status}`);
     const client = clientsBySeat[actingSeat];
     assert.ok(client, `client for acting seat ${actingSeat} should exist`);
+    if (client.socket.readyState !== WebSocket.OPEN) {
+      const afterSeq = clientsBySeat[0].messages.length;
+      await waitForNewRoom(clientsBySeat[0], afterSeq, (message) => {
+        if (message.game.status === "showdown") return true;
+        return message.game.actingSeat !== actingSeat;
+      }, `auto advance disconnected seat ${actingSeat}`, 5000);
+      continue;
+    }
     const player = state.seats[actingSeat];
     const callAmount = Math.max(0, state.game.currentBet - player.bet);
     const afterSeq = clientsBySeat[0].messages.length;
+    const beforeStatus = state.game.status;
+    const beforeBoard = state.game.board.length;
+    const beforeAction = state.game.lastAction;
     client.send({ type: "action", action: callAmount > 0 ? "call" : "check" });
     await waitForNewRoom(clientsBySeat[0], afterSeq, (message) => {
       if (message.game.status === "showdown") return true;
-      return message.game.actingSeat !== actingSeat || message.game.lastAction.includes("翻牌") || message.game.lastAction.includes("转牌") || message.game.lastAction.includes("河牌");
+      return message.game.actingSeat !== actingSeat
+        || message.game.status !== beforeStatus
+        || message.game.board.length !== beforeBoard
+        || message.game.lastAction !== beforeAction;
     }, `advance after seat ${actingSeat}`, 5000);
   }
   assert.fail("hand did not finish within expected action count");
@@ -180,6 +194,8 @@ async function driveHandToShowdown(clientsBySeat) {
 async function main() {
   const page = await fetch(`${BASE_URL}/`);
   assert.equal(page.status, 200);
+  const version = await api("/api/version");
+  assert.match(version.version, /^\d+\.\d+\.\d+$/);
   log("首页可访问");
 
   const users = [];
@@ -217,6 +233,10 @@ async function main() {
 
   clients[0].send({ type: "startHand" });
   const started = await waitForRoom(clients[0], (message) => message.game.status === "preflop", "preflop");
+  assert.equal(started.version, version.version);
+  assert.equal(started.game.music.mode, "single");
+  assert.equal(started.game.music.tracks.length, 1);
+  assert.equal(started.game.music.tracks[0].url, "/music/room-loop.ogg");
   assert.equal(started.game.pot, 15);
   assert.equal(started.game.currentBet, 10);
   assert.equal(started.game.button, 0);
@@ -246,6 +266,11 @@ async function main() {
   }
   log("未摊牌前私牌隔离和公平哈希隐藏正常");
 
+  clients[1].send({ type: "presetAction", action: "fold" });
+  const presetState = await waitForRoom(clients[1], (message) => message.seats[1]?.pendingAction?.action === "fold", "preset fold");
+  assert.equal(presetState.seats[1].pendingAction.action, "fold");
+  log("未轮到自己时可以提前预设弃牌");
+
   clients[0].send({ type: "stand" });
   await waitForError(clients[0], "手牌进行中不能离座");
   clients[0].send({ type: "switchAvatar" });
@@ -271,6 +296,11 @@ async function main() {
   assert.equal(targetEmote.interaction.targetSeat, 1);
   log("点名互动会广播目标和“你 + 台词”文案");
 
+  clients[2].socket.close();
+  const offlineState = await waitForRoom(clients[0], (message) => message.seats[2] && !message.seats[2].connected, "seat 2 offline");
+  assert.equal(offlineState.seats[2].connected, false);
+  log("玩家断线后座位会显示离线");
+
   const showdown = await driveHandToShowdown({ 0: clients[0], 1: clients[1], 2: clients[2] });
   assert.equal(showdown.game.status, "showdown");
   assert.equal(showdown.game.pot, 0);
@@ -284,6 +314,14 @@ async function main() {
     assert.ok(seat.hole.every((card) => /^[2-9TJQKA][shdc]$/.test(card)), "all hole cards should reveal at showdown");
   }
   log("下注轮转、发公共牌、摊牌、奖池归零、筹码守恒和公平证明公开正常");
+
+  const autoTexts = clients[0].messages
+    .filter((message) => message.type === "roomState")
+    .map((message) => message.game.lastAction)
+    .filter((text) => text.includes("离线自动") || text.includes("按预设"));
+  assert.equal(showdown.seats[1].folded, true);
+  assert.ok(autoTexts.some((text) => text.includes("离线自动")));
+  log("预设弃牌和离线自动不加注都已执行");
 
   clients[1].socket.close();
   await new Promise((resolve) => setTimeout(resolve, 200));

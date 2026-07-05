@@ -8,6 +8,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { DatabaseSync } = require("node:sqlite");
 const { URL } = require("url");
+const packageInfo = require("./package.json");
 
 loadEnvFile();
 
@@ -29,6 +30,7 @@ const EMOTE_COOLDOWN_MS = clampConfigInt(process.env.EMOTE_COOLDOWN_MS, 2500, 50
 const CHAT_COOLDOWN_MS = clampConfigInt(process.env.CHAT_COOLDOWN_MS, 3000, 500, 60000);
 const DEALER_TIP_COOLDOWN_MS = clampConfigInt(process.env.DEALER_TIP_COOLDOWN_MS, 2000, 500, 60000);
 const FEEDBACK_COOLDOWN_MS = clampConfigInt(process.env.FEEDBACK_COOLDOWN_MS, 30000, 3000, 300000);
+const APP_VERSION = process.env.APP_VERSION || packageInfo.version || "0.1.0";
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "poker.sqlite");
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -50,10 +52,7 @@ const LOBBY_MUSIC = {
   ]
 };
 const ROOM_MUSIC_TRACKS = [
-  { id: "room-wisdom", name: "A Brand New Wisdom", url: "/music/room-wisdom.ogg" },
-  { id: "room-just-saying", name: "Just Saying Tho", url: "/music/room-just-saying.ogg" },
-  { id: "room-winter-dust", name: "Winter Dust", url: "/music/room-winter-dust.ogg" },
-  { id: "room-swinging-sweet", name: "Swinging Sweet", url: "/music/room-swinging-sweet.ogg" }
+  { id: "room-loop", name: "Room Loop", url: "/music/room-loop.ogg" }
 ];
 const DEALER_BLESSINGS = [
   "祝各位手气顺顺",
@@ -291,6 +290,10 @@ function insertFeedback({ user, text, req }) {
 
 async function handleApi(req, res, url) {
   try {
+    if (req.method === "GET" && url.pathname === "/api/version") {
+      return json(res, 200, { version: APP_VERSION, startedAt: SERVER_STARTED_AT });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/register") {
       const body = await readBody(req);
       const email = normalizeEmail(body.email);
@@ -672,7 +675,7 @@ function createRoom(name, owner, settings = {}) {
     turnTimer: null,
     chipAnimations: [],
     music: {
-      mode: "playlist",
+      mode: "single",
       startedAt: Date.now(),
       tracks: ROOM_MUSIC_TRACKS
     },
@@ -731,6 +734,7 @@ function publicLobbyPayload() {
     type: "lobby",
     rooms: [...rooms.values()].map(publicRoom),
     music: LOBBY_MUSIC,
+    version: APP_VERSION,
     serverNow: Date.now()
   };
 }
@@ -869,6 +873,7 @@ function handleTurnTimeout(roomId, handNumber, actingSeat, deadline) {
   }
   game.acted = [...new Set([...game.acted, player.userId])];
   autoAdvanceIfNeeded(room);
+  processAutomaticTurns(room);
   scheduleTurnTimer(room);
   broadcastRoom(room);
 }
@@ -906,6 +911,7 @@ function startHand(room) {
     player.allIn = false;
     player.inHand = player.chips > 0;
     player.ready = false;
+    player.pendingAction = null;
     player.result = "";
   }
 
@@ -929,6 +935,7 @@ function startHand(room) {
   game.actingSeat = nextSeat(room, bigBlindSeat, canAct);
   game.lastAction = `第 ${game.handNumber} 手牌开始`;
   autoAdvanceIfNeeded(room);
+  processAutomaticTurns(room);
   scheduleTurnTimer(room);
 }
 
@@ -949,40 +956,47 @@ function takeChips(room, seatIndex, amount) {
 
 function handlePlayerAction(room, user, payload) {
   const seatIndex = room.seats.findIndex((player) => player && player.userId === user.id);
-  const game = room.game;
   if (seatIndex === -1) {
     throw new Error("你还没有入座");
   }
+  applyPlayerAction(room, seatIndex, String(payload.action || ""), payload.amount);
+  finishActionProcessing(room);
+}
+
+function applyPlayerAction(room, seatIndex, action, amount, prefix = "") {
+  const game = room.game;
+  const player = room.seats[seatIndex];
+  if (!player) throw new Error("你还没有入座");
   if (game.status === "waiting" || game.status === "showdown") {
     throw new Error("当前没有进行中的手牌");
   }
   if (game.actingSeat !== seatIndex) {
     throw new Error("还没轮到你");
   }
-  const player = room.seats[seatIndex];
-  const action = String(payload.action || "");
   const callAmount = Math.max(0, game.currentBet - player.bet);
+  const name = prefix ? `${player.username} ${prefix}` : player.username;
+  player.pendingAction = null;
 
   if (action === "fold") {
     player.folded = true;
     game.acted.push(player.userId);
-    game.lastAction = `${player.username} 弃牌`;
+    game.lastAction = `${name} 弃牌`;
   } else if (action === "check") {
     if (callAmount > 0) {
       throw new Error("当前不能过牌，需要跟注或弃牌");
     }
     game.acted.push(player.userId);
-    game.lastAction = `${player.username} 过牌`;
+    game.lastAction = `${name} 过牌`;
   } else if (action === "call") {
     const paid = takeChips(room, seatIndex, callAmount);
     addChipAnimation(room, seatIndex, paid, "跟注");
     game.acted.push(player.userId);
-    game.lastAction = `${player.username} 跟注 ${paid}`;
+    game.lastAction = `${name} 跟注 ${paid}`;
   } else if (action === "bet") {
     if (game.currentBet > 0) {
       throw new Error("已有下注，请选择加注");
     }
-    const total = Math.floor(Number(payload.amount));
+    const total = Math.floor(Number(amount));
     if (!Number.isFinite(total) || total < room.settings.bigBlind) {
       throw new Error(`下注至少 ${room.settings.bigBlind}`);
     }
@@ -991,9 +1005,9 @@ function handlePlayerAction(room, user, payload) {
     game.currentBet = player.bet;
     game.minRaise = room.settings.bigBlind;
     game.acted = [player.userId];
-    game.lastAction = `${player.username} 下注 ${paid}`;
+    game.lastAction = `${name} 下注 ${paid}`;
   } else if (action === "raise") {
-    const total = Math.floor(Number(payload.amount));
+    const total = Math.floor(Number(amount));
     const raiseBy = total - game.currentBet;
     if (!Number.isFinite(total) || total <= game.currentBet) {
       throw new Error("加注金额需要高于当前下注");
@@ -1010,14 +1024,95 @@ function handlePlayerAction(room, user, payload) {
     } else {
       game.acted.push(player.userId);
     }
-    game.lastAction = `${player.username} 加注到 ${player.bet}（本次投入 ${paid}）`;
+    game.lastAction = `${name} 加注到 ${player.bet}（本次投入 ${paid}）`;
   } else {
     throw new Error("未知操作");
   }
 
   game.acted = [...new Set(game.acted)];
   autoAdvanceIfNeeded(room);
+}
+
+function finishActionProcessing(room) {
+  processAutomaticTurns(room);
   scheduleTurnTimer(room);
+}
+
+function setPresetAction(room, user, payload) {
+  const seatIndex = room.seats.findIndex((player) => player && player.userId === user.id);
+  if (seatIndex === -1) throw new Error("你还没有入座");
+  const player = room.seats[seatIndex];
+  if (!isHandInProgress(room) || !player.inHand || player.folded || player.allIn) {
+    throw new Error("当前不能设置预设动作");
+  }
+  const action = String(payload.action || "");
+  if (action === "clear") {
+    player.pendingAction = null;
+    room.game.lastAction = `${player.username} 清除了预设动作`;
+    return;
+  }
+  if (!["fold", "checkCall", "betRaise"].includes(action)) {
+    throw new Error("未知预设动作");
+  }
+  const amount = clampInt(payload.amount, 0, 0, player.bet + player.chips);
+  player.pendingAction = {
+    action,
+    amount,
+    createdAt: Date.now()
+  };
+  room.game.lastAction = `${player.username} 已设置预设动作`;
+  if (room.game.actingSeat === seatIndex) {
+    processAutomaticTurns(room);
+    scheduleTurnTimer(room);
+  }
+}
+
+function processAutomaticTurns(room) {
+  let guard = MAX_SEATS * 8;
+  while (guard > 0 && isHandInProgress(room) && Number.isInteger(room.game.actingSeat)) {
+    guard -= 1;
+    const seatIndex = room.game.actingSeat;
+    const player = room.seats[seatIndex];
+    if (!player || !canAct(player)) {
+      autoAdvanceIfNeeded(room);
+      continue;
+    }
+    const disconnected = !isUserConnected(player.userId);
+    const preset = player.pendingAction;
+    if (!disconnected && !preset) break;
+    const resolved = resolveAutomaticAction(room, seatIndex, disconnected ? null : preset);
+    const prefix = disconnected ? "离线自动" : "按预设";
+    applyPlayerAction(room, seatIndex, resolved.action, resolved.amount, prefix);
+  }
+}
+
+function resolveAutomaticAction(room, seatIndex, preset) {
+  const game = room.game;
+  const player = room.seats[seatIndex];
+  const callAmount = Math.max(0, game.currentBet - player.bet);
+  const fallback = callAmount > 0 ? { action: "fold", amount: 0 } : { action: "check", amount: 0 };
+  if (!preset) return fallback;
+
+  if (preset.action === "fold") return { action: "fold", amount: 0 };
+  if (preset.action === "checkCall") return callAmount > 0
+    ? { action: "call", amount: 0 }
+    : { action: "check", amount: 0 };
+
+  if (preset.action === "betRaise") {
+    const total = Math.floor(Number(preset.amount));
+    if (game.currentBet === 0 && Number.isFinite(total) && total >= room.settings.bigBlind) {
+      return { action: "bet", amount: total };
+    }
+    const raiseBy = total - game.currentBet;
+    const canRaise = Number.isFinite(total)
+      && total > game.currentBet
+      && (raiseBy >= game.minRaise || total >= player.bet + player.chips);
+    if (game.currentBet > 0 && canRaise) {
+      return { action: "raise", amount: total };
+    }
+  }
+
+  return fallback;
 }
 
 function autoAdvanceIfNeeded(room) {
@@ -1316,6 +1411,7 @@ function roomStateFor(room, viewerId) {
       },
       music: room.music
     },
+    version: APP_VERSION,
     seats: room.seats.map((player, seat) => player ? {
       seat,
       userId: player.userId,
@@ -1328,6 +1424,7 @@ function roomStateFor(room, viewerId) {
       ready: Boolean(player.ready),
       avatar: player.avatar || "",
       connected: isUserConnected(player.userId),
+      pendingAction: player.userId === viewerId ? player.pendingAction || null : null,
       hole: reveal || player.userId === viewerId ? player.hole || [] : (player.hole || []).map(() => "??"),
       result: player.result || ""
     } : null),
@@ -1450,6 +1547,7 @@ function handleWsMessage(client, message) {
       allIn: false,
       inHand: false,
       ready: false,
+      pendingAction: null,
       result: ""
     };
     room.game.lastAction = `${client.user.username} 入座`;
@@ -1545,6 +1643,9 @@ function handleWsMessage(client, message) {
   } else if (payload.type === "action") {
     handlePlayerAction(room, client.user, payload);
     broadcastRoom(room);
+  } else if (payload.type === "presetAction") {
+    setPresetAction(room, client.user, payload);
+    broadcastRoom(room);
   } else if (payload.type === "chat") {
     const text = String(payload.text || "").trim().slice(0, 160);
     if (text) {
@@ -1630,7 +1731,11 @@ function closeClient(client) {
   client.closed = true;
   clients.delete(client);
   const room = rooms.get(client.roomId);
-  if (room) broadcastRoom(room);
+  if (room) {
+    processAutomaticTurns(room);
+    scheduleTurnTimer(room);
+    broadcastRoom(room);
+  }
 }
 
 function readFrame(client) {

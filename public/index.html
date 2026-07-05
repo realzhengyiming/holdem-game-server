@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Texas Hold'em MVP</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=0.1.1">
 </head>
 <body>
   <main class="shell">
@@ -49,6 +49,7 @@
           <span id="connLabel">离线</span>
         </div>
         <div class="topActions">
+          <span id="versionLabel" class="versionLabel">v0.1.1</span>
           <button id="bgmToggleBtn" class="ghost soundToggle" type="button" aria-pressed="false">BGM 开</button>
           <button id="logoutBtn" class="ghost">退出</button>
         </div>
@@ -93,6 +94,7 @@
             <h2>大厅</h2>
             <button id="refreshRoomsBtn" class="secondary">刷新</button>
           </div>
+          <div id="resumeRoom" class="resumeRoom hidden"></div>
           <div id="rooms"></div>
         </section>
       </section>
@@ -144,6 +146,13 @@
             <button id="callBtn">跟注</button>
             <button id="betBtn">下注</button>
             <button id="raiseBtn">加注</button>
+            <div class="presetControls" aria-label="提前动作">
+              <span id="presetStatus">预设：无</span>
+              <button id="presetFoldBtn" type="button" class="secondary">预弃牌</button>
+              <button id="presetCheckCallBtn" type="button" class="secondary">预过/跟</button>
+              <button id="presetBetRaiseBtn" type="button" class="secondary">预下注/加注</button>
+              <button id="presetClearBtn" type="button" class="ghost">清除</button>
+            </div>
           </div>
         </section>
 
@@ -215,6 +224,6 @@
     </aside>
   </main>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=0.1.1"></script>
 </body>
 </html>

@@ -1,7 +1,8 @@
 Music files in this folder are from OpenGameArt.org.
 
-Lobby:
-- Heavenly Loop.ogg
+Lobby and room loop:
+- lobby-heavenly-loop.ogg
+- room-loop.ogg
 - Author: isaiah658
 - Source: https://opengameart.org/content/heavenly-loop
 - License: CC0 / Public Domain

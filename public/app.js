@@ -1,6 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
+const CLIENT_VERSION = "0.1.1";
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
   { key: "amazing", text: "真棒" },
@@ -50,7 +51,9 @@ const state = {
   bgmMuted: localStorage.getItem("pokerBgmMuted") === "1",
   musicDurations: new Map(),
   feedbackChallengeId: "",
-  countdownAlertKey: ""
+  countdownAlertKey: "",
+  version: CLIENT_VERSION,
+  lastRoomId: localStorage.getItem("pokerLastRoomId") || ""
 };
 
 const authView = $("#authView");
@@ -84,6 +87,10 @@ $("#checkBtn").addEventListener("click", () => sendAction("check"));
 $("#callBtn").addEventListener("click", () => sendAction("call"));
 $("#betBtn").addEventListener("click", () => sendAction("bet"));
 $("#raiseBtn").addEventListener("click", () => sendAction("raise"));
+$("#presetFoldBtn").addEventListener("click", () => sendPresetAction("fold"));
+$("#presetCheckCallBtn").addEventListener("click", () => sendPresetAction("checkCall"));
+$("#presetBetRaiseBtn").addEventListener("click", () => sendPresetAction("betRaise"));
+$("#presetClearBtn").addEventListener("click", () => sendPresetAction("clear"));
 $("#chatForm").addEventListener("submit", (event) => {
   event.preventDefault();
   const input = $("#chatInput");
@@ -113,6 +120,7 @@ boot();
 
 async function boot() {
   renderRulesSidebar();
+  setVersionLabel(CLIENT_VERSION);
   if (!state.token) {
     showAuth();
     return;
@@ -231,6 +239,7 @@ function connect() {
         state.serverOffsetMs = Date.now() - message.serverNow;
       }
       state.rooms = message.rooms || [];
+      if (message.version) setVersionLabel(message.version);
       renderRooms();
       if (!state.roomState && message.music) syncBgm(message.music, "lobby");
     } else if (message.type === "roomState") {
@@ -238,11 +247,19 @@ function connect() {
         state.serverOffsetMs = Date.now() - message.game.serverNow;
       }
       state.roomState = message;
+      state.lastRoomId = message.room.id;
+      localStorage.setItem("pokerLastRoomId", state.lastRoomId);
+      if (message.version) setVersionLabel(message.version);
       if (message.game?.music) syncBgm(message.game.music, `room:${message.room.id}`);
       renderRoom();
     } else if (message.type === "interaction") {
       renderInteraction(message.interaction);
     } else if (message.type === "error") {
+      if (message.error.includes("房间不存在")) {
+        localStorage.removeItem("pokerLastRoomId");
+        state.lastRoomId = "";
+        renderResumeRoom();
+      }
       alert(message.error);
     }
   });
@@ -259,6 +276,10 @@ function send(payload) {
 
 function sendAction(action) {
   send({ type: "action", action, amount: Number($("#amountInput").value || 0) });
+}
+
+function sendPresetAction(action) {
+  send({ type: "presetAction", action, amount: Number($("#amountInput").value || 0) });
 }
 
 function sendEmote(emote = $("#emoteSelect").value, targetSeat) {
@@ -306,6 +327,8 @@ async function createRoom() {
 }
 
 function joinRoom(roomId) {
+  state.lastRoomId = String(roomId || "").toUpperCase();
+  localStorage.setItem("pokerLastRoomId", state.lastRoomId);
   showRoom();
   send({ type: "joinRoom", roomId });
 }
@@ -330,6 +353,7 @@ function showApp() {
   authView.classList.add("hidden");
   appView.classList.remove("hidden");
   $("#userLabel").textContent = state.user ? state.user.username : "未登录";
+  setVersionLabel(state.version || CLIENT_VERSION);
   updateBgmToggle();
 }
 
@@ -375,6 +399,12 @@ function toggleReady() {
 
 function setConn(text) {
   $("#connLabel").textContent = text;
+}
+
+function setVersionLabel(version) {
+  state.version = version || CLIENT_VERSION;
+  const label = $("#versionLabel");
+  if (label) label.textContent = `v${state.version}`;
 }
 
 function toggleBgmMuted() {
@@ -673,6 +703,7 @@ function playSettlementSound(power) {
 
 function renderRooms() {
   const container = $("#rooms");
+  renderResumeRoom();
   if (!state.rooms.length) {
     container.innerHTML = `<p class="hint">暂无房间，先创建一桌。</p>`;
     return;
@@ -689,6 +720,26 @@ function renderRooms() {
   container.querySelectorAll("[data-room]").forEach((button) => {
     button.addEventListener("click", () => joinRoom(button.dataset.room));
   });
+}
+
+function renderResumeRoom() {
+  const box = $("#resumeRoom");
+  if (!box) return;
+  const room = state.rooms.find((item) => item.id === state.lastRoomId);
+  if (!room || state.roomState?.room?.id === room.id) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = `
+    <div>
+      <strong>上次牌桌还在</strong>
+      <p class="hint">${escapeHtml(room.name)} #${escapeHtml(room.id)} · ${room.seats}/${room.maxSeats} 人 · ${statusText(room.status)}</p>
+    </div>
+    <button type="button" data-resume-room="${escapeHtml(room.id)}">回到牌桌</button>
+  `;
+  box.classList.remove("hidden");
+  box.querySelector("[data-resume-room]").addEventListener("click", () => joinRoom(room.id));
 }
 
 function renderRoom() {
@@ -721,6 +772,7 @@ function renderRoom() {
   $("#raiseBtn").disabled = !isMyTurn || snapshot.game.currentBet === 0;
   $("#randomAvatarBtn").disabled = !mySeat || activeHand || !state.avatars.length;
   $("#dealerTipBtn").disabled = !mySeat || activeHand;
+  renderPresetControls(snapshot, mySeat, activeHand);
   $("#startHandBtn").disabled = !snapshot.room.canStart;
   $("#startHandBtn").textContent = snapshot.room.canStart
     ? "开始下一手"
@@ -746,6 +798,25 @@ function renderRoom() {
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
 
+function renderPresetControls(snapshot, mySeat, activeHand) {
+  const canPreset = Boolean(mySeat) && activeHand && mySeat.inHand && !mySeat.folded && !mySeat.allIn;
+  const pending = mySeat?.pendingAction;
+  const amount = pending?.amount ? ` ${pending.amount}` : "";
+  const text = pending
+    ? {
+      fold: "预设：弃牌",
+      checkCall: "预设：过牌/跟注",
+      betRaise: `预设：下注/加注${amount}`
+    }[pending.action] || "预设：已设置"
+    : "预设：无";
+  $("#presetStatus").textContent = text;
+  ["#presetFoldBtn", "#presetCheckCallBtn", "#presetBetRaiseBtn", "#presetClearBtn"].forEach((selector) => {
+    const button = $(selector);
+    if (button) button.disabled = !canPreset;
+  });
+  $("#presetClearBtn").disabled = !canPreset || !pending;
+}
+
 function seatHtml(seat, index, game) {
   const posClass = `pos${index}`;
   if (!seat) {
@@ -754,6 +825,7 @@ function seatHtml(seat, index, game) {
   const classes = ["seat", posClass];
   if (game.actingSeat === index) classes.push("active");
   if (seat.folded) classes.push("folded");
+  if (!seat.connected) classes.push("disconnected");
   const badges = [];
   if (game.button === index) badges.push("庄");
   if (seat.ready) badges.push("已准备");
