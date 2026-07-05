@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const CLIENT_VERSION = "0.1.12";
+const CLIENT_VERSION = "0.1.13";
 const DEFAULT_WAGER_AMOUNT = 20;
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
@@ -324,7 +324,7 @@ function chooseBetMultiple(multiple) {
   if (!snapshot) return;
   const mySeat = snapshot.seats.find((seat) => seat && seat.userId === state.user.id);
   if (!mySeat) return;
-  const target = snapshot.room.bigBlind * multiple;
+  const target = wagerMultipleBase(snapshot) * multiple;
   setBetAmount(Math.max(minimumWagerTotal(snapshot, mySeat), target));
 }
 
@@ -369,6 +369,10 @@ function minimumWagerTotal(snapshot, mySeat) {
     return Math.min(mySeat.bet + mySeat.chips, snapshot.game.currentBet + minRaise);
   }
   return Math.min(mySeat.bet + mySeat.chips, snapshot.room.bigBlind);
+}
+
+function wagerMultipleBase(snapshot) {
+  return Math.max(1, Number(snapshot?.game?.currentBet || snapshot?.room?.bigBlind || 1));
 }
 
 function sendEmote(emote = $("#emoteSelect").value, targetSeat) {
