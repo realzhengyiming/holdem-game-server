@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const CLIENT_VERSION = "0.1.1";
+const CLIENT_VERSION = "0.1.2";
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
   { key: "amazing", text: "真棒" },
@@ -79,6 +79,8 @@ $("#rulesToggle").addEventListener("click", toggleRulesDrawer);
 $("#rulesClose").addEventListener("click", closeRulesDrawer);
 $("#feedbackToggle").addEventListener("click", toggleFeedbackDrawer);
 $("#feedbackClose").addEventListener("click", closeFeedbackDrawer);
+$("#supportToggle").addEventListener("click", toggleSupportDrawer);
+$("#supportClose").addEventListener("click", closeSupportDrawer);
 $("#feedbackRefreshCaptcha").addEventListener("click", loadFeedbackChallenge);
 $("#feedbackForm").addEventListener("submit", submitFeedback);
 $("#bgmToggleBtn").addEventListener("click", toggleBgmMuted);
@@ -347,6 +349,7 @@ function logout() {
 function showAuth() {
   authView.classList.remove("hidden");
   appView.classList.add("hidden");
+  $("#supportDrawer")?.classList.add("hidden");
 }
 
 function showApp() {
@@ -354,6 +357,7 @@ function showApp() {
   appView.classList.remove("hidden");
   $("#userLabel").textContent = state.user ? state.user.username : "未登录";
   setVersionLabel(state.version || CLIENT_VERSION);
+  if (!lobbyView.classList.contains("hidden")) $("#supportDrawer")?.classList.remove("hidden");
   updateBgmToggle();
 }
 
@@ -361,6 +365,7 @@ function showLobby() {
   if (state.roomState) send({ type: "leaveRoom" });
   lobbyView.classList.remove("hidden");
   roomView.classList.add("hidden");
+  $("#supportDrawer")?.classList.remove("hidden");
   state.roomState = null;
   clearCountdown();
   loadRooms();
@@ -369,6 +374,8 @@ function showLobby() {
 function showRoom() {
   lobbyView.classList.add("hidden");
   roomView.classList.remove("hidden");
+  closeSupportDrawer();
+  $("#supportDrawer")?.classList.add("hidden");
 }
 
 function attemptBackLobby() {
@@ -469,17 +476,33 @@ function closeFeedbackDrawer() {
   updateSideDrawerLabels();
 }
 
+function toggleSupportDrawer() {
+  const drawer = $("#supportDrawer");
+  const willOpen = !drawer.classList.contains("open");
+  closeSideDrawers();
+  if (willOpen) drawer.classList.add("open");
+  updateSideDrawerLabels();
+}
+
+function closeSupportDrawer() {
+  $("#supportDrawer").classList.remove("open");
+  updateSideDrawerLabels();
+}
+
 function closeSideDrawers() {
   $("#rulesDrawer")?.classList.remove("open");
   $("#feedbackDrawer")?.classList.remove("open");
+  $("#supportDrawer")?.classList.remove("open");
   updateSideDrawerLabels();
 }
 
 function updateSideDrawerLabels() {
   const rulesOpen = $("#rulesDrawer")?.classList.contains("open");
   const feedbackOpen = $("#feedbackDrawer")?.classList.contains("open");
+  const supportOpen = $("#supportDrawer")?.classList.contains("open");
   if ($("#rulesToggle")) $("#rulesToggle").innerHTML = `牌型 ${rulesOpen ? "&gt;" : "&lt;"}`;
   if ($("#feedbackToggle")) $("#feedbackToggle").innerHTML = `意见 ${feedbackOpen ? "&gt;" : "&lt;"}`;
+  if ($("#supportToggle")) $("#supportToggle").innerHTML = `随缘 ${supportOpen ? "&gt;" : "&lt;"}`;
 }
 
 async function loadFeedbackChallenge() {

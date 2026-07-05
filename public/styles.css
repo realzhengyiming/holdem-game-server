@@ -1231,6 +1231,13 @@ p {
   top: calc(38% + 104px);
 }
 
+.supportToggle {
+  bottom: 28px;
+  border-color: rgb(255 255 255 / 18%);
+  background: #111a21;
+  color: #cbd9d7;
+}
+
 .rulesPanel {
   height: 100%;
   margin-left: 48px;
@@ -1245,6 +1252,21 @@ p {
   display: grid;
   align-content: start;
   gap: 14px;
+}
+
+.supportPanel {
+  display: grid;
+  align-content: center;
+}
+
+.supportPanel .drinkSupport {
+  background:
+    linear-gradient(180deg, rgb(24 26 24 / 70%), rgb(12 20 25 / 78%));
+  border-color: rgb(255 255 255 / 12%);
+}
+
+.supportPanel .drinkSupport strong {
+  color: #fff7d7;
 }
 
 .rulesHead {
