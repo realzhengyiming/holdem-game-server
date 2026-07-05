@@ -33,6 +33,17 @@ npm start
 http://127.0.0.1:3000
 ```
 
+## 回归测试
+
+启动服务器后可以跑一轮核心流程回归：
+
+```powershell
+$env:BASE_URL="http://127.0.0.1:3000"
+npm run test:regression
+```
+
+脚本会创建测试账号和测试房间，覆盖邮箱验证登录、WebSocket 同步、入座准备、盲注动画、私牌隔离、下注轮转、摊牌结算、公平证明公开和断线重连。
+
 ## 部署
 
 把 `poker-server` 目录上传到服务器，安装 Node.js 后执行：

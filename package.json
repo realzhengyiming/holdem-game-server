@@ -5,7 +5,8 @@
   "description": "A zero-dependency Texas Hold'em MVP server with SQLite users, email login codes, rooms, and realtime WebSocket play.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:regression": "node scripts/regression-test.js"
   },
   "engines": {
     "node": ">=22.5.0"
