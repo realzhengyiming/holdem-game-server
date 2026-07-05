@@ -15,22 +15,48 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+stop_pid() {
+  local pid="$1"
+  local label="${2:-旧服务}"
+  if [ -z "$pid" ] || ! kill -0 "$pid" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "停止${label} pid=$pid"
+  kill "$pid" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    echo "强制停止${label} pid=$pid"
+    kill -9 "$pid" >/dev/null 2>&1 || true
+  fi
+}
+
+port_pids() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnp "sport = :$PORT" 2>/dev/null \
+      | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' \
+      | sort -u
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | sort -u
+  elif command -v fuser >/dev/null 2>&1; then
+    fuser "$PORT"/tcp 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u
+  fi
+}
+
 if [ -f "$PID_FILE" ]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" >/dev/null 2>&1; then
-    echo "停止旧服务 pid=$OLD_PID"
-    kill "$OLD_PID" >/dev/null 2>&1 || true
-    for _ in $(seq 1 20); do
-      if ! kill -0 "$OLD_PID" >/dev/null 2>&1; then
-        break
-      fi
-      sleep 0.2
-    done
-    if kill -0 "$OLD_PID" >/dev/null 2>&1; then
-      kill -9 "$OLD_PID" >/dev/null 2>&1 || true
-    fi
-  fi
+  stop_pid "$OLD_PID" "pid 文件中的旧服务"
 fi
+
+for PORT_PID in $(port_pids); do
+  if [ "$PORT_PID" != "$$" ]; then
+    stop_pid "$PORT_PID" "占用端口 $PORT 的进程"
+  fi
+done
 
 echo "启动服务 HOST=$HOST PORT=$PORT"
 HOST="$HOST" PORT="$PORT" NODE_ENV="$NODE_ENV" nohup node server.js > "$LOG_FILE" 2>&1 &
