@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Texas Hold'em MVP</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="authView" class="auth">
+      <div class="brand">
+        <span class="mark">TH</span>
+        <div>
+          <h1>德州扑克服务器</h1>
+          <p>注册账号，创建房间，实时开局。</p>
+        </div>
+      </div>
+      <form id="authForm" class="panel">
+        <label>
+          邮箱
+          <input id="email" name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>
+          昵称
+          <input id="username" name="username" autocomplete="nickname" maxlength="20" placeholder="牌桌显示名，可选">
+        </label>
+        <label>
+          密码
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required>
+        </label>
+        <div class="row">
+          <button id="loginBtn" type="button">登录</button>
+          <button id="registerBtn" type="button" class="secondary">注册</button>
+        </div>
+        <div class="codeRow">
+          <input id="emailCode" inputmode="numeric" maxlength="6" placeholder="邮箱验证码">
+          <button id="sendCodeBtn" type="button" class="secondary">获取验证码</button>
+        </div>
+        <button id="codeLoginBtn" type="button" class="emailCode">验证码登录</button>
+        <p id="authError" class="error"></p>
+      </form>
+    </section>
+
+    <section id="appView" class="app hidden">
+      <header class="topbar">
+        <div>
+          <strong id="userLabel">未登录</strong>
+          <span id="connLabel">离线</span>
+        </div>
+        <div class="topActions">
+          <button id="bgmToggleBtn" class="ghost soundToggle" type="button" aria-pressed="false">BGM 开</button>
+          <button id="logoutBtn" class="ghost">退出</button>
+        </div>
+      </header>
+
+      <section id="lobbyView" class="layout">
+        <aside class="panel lobbyTools">
+          <h2>创建房间</h2>
+          <label>
+            房间名
+            <input id="roomName" maxlength="32" placeholder="今晚主桌">
+          </label>
+          <div class="settingGrid">
+            <label>
+              小盲
+              <input id="smallBlindInput" type="number" min="1" step="1" value="5">
+            </label>
+            <label>
+              大盲
+              <input id="bigBlindInput" type="number" min="2" step="1" value="10">
+            </label>
+            <label>
+              初始筹码
+              <input id="startingChipsInput" type="number" min="200" step="50" value="1000">
+            </label>
+          </div>
+          <button id="createRoomBtn">创建并进入</button>
+          <p class="hint">房间配置创建后固定；牌局状态保存在服务器内存中，重启会清空房间。</p>
+        </aside>
+        <section class="panel roomList">
+          <div class="sectionHead">
+            <h2>大厅</h2>
+            <button id="refreshRoomsBtn" class="secondary">刷新</button>
+          </div>
+          <div id="rooms"></div>
+        </section>
+      </section>
+
+      <section id="roomView" class="hidden">
+        <div class="tableHead">
+          <button id="backLobbyBtn" class="ghost">返回大厅</button>
+          <div>
+            <h2 id="roomTitle">牌桌</h2>
+            <p id="handInfo"></p>
+          </div>
+          <button id="startHandBtn">开始下一手</button>
+        </div>
+
+        <section class="tableSurface">
+          <div class="boardLine">
+            <div>
+              <span class="label">公共牌</span>
+              <div id="board" class="cards"></div>
+            </div>
+            <div class="pot">
+              <span>底池</span>
+              <strong id="potValue">0</strong>
+            </div>
+            <button id="dealerSpot" class="dealerSpot" type="button" aria-label="荷官">
+              <img src="/dealer-cat.png" alt="">
+              <span>荷官</span>
+            </button>
+          </div>
+          <div id="seats" class="seats"></div>
+          <div id="turnCountdown" class="turnCountdown hidden">
+            <span id="turnCountdownName">等待</span>
+            <strong id="turnCountdownValue">30</strong>
+          </div>
+          <div id="settlementPanel" class="settlementPanel hidden"></div>
+        </section>
+
+        <section class="playbar panel">
+          <div>
+            <div id="turnLabel" class="turn">等待开始</div>
+            <div id="lastAction" class="hint"></div>
+          </div>
+          <div class="actions">
+            <button id="readyBtn" class="secondary">准备</button>
+            <button id="randomAvatarBtn" class="secondary">随机头像</button>
+            <input id="amountInput" type="number" min="1" step="1" value="20">
+            <button id="foldBtn" class="danger">弃牌</button>
+            <button id="checkBtn">过牌</button>
+            <button id="callBtn">跟注</button>
+            <button id="betBtn">下注</button>
+            <button id="raiseBtn">加注</button>
+          </div>
+        </section>
+
+        <section class="panel chat">
+          <div class="socialTools">
+            <div id="avatarChoices" class="avatarChoices"></div>
+            <div class="emoteTools">
+              <select id="emoteSelect" class="legacyEmoteControl">
+                <option value="wellPlayed">打得不错</option>
+                <option value="amazing">真棒</option>
+                <option value="hello">你好</option>
+                <option value="oops">抱歉</option>
+                <option value="wow">哇哦</option>
+              </select>
+              <select id="emoteTarget" class="legacyEmoteControl"></select>
+              <button id="sendEmoteBtn" type="button" class="secondary legacyEmoteControl">互动</button>
+              <input id="dealerTipAmount" class="legacyTipControl" type="number" min="1" step="1" value="5">
+              <button id="dealerTipBtn" type="button" class="secondary legacyTipControl">打赏荷官</button>
+            </div>
+          </div>
+          <div id="messages" class="messages"></div>
+          <form id="chatForm" class="chatForm">
+            <input id="chatInput" maxlength="160" placeholder="说点什么">
+            <button>发送</button>
+          </form>
+        </section>
+      </section>
+    </section>
+    <aside id="rulesDrawer" class="sideDrawer rulesDrawer">
+      <button id="rulesToggle" class="sideToggle rulesToggle" type="button" aria-label="查看牌型规则">牌型 &lt;</button>
+      <div class="rulesPanel">
+        <div class="rulesHead">
+          <h2>牌型与规则</h2>
+          <button id="rulesClose" class="ghost" type="button">收起</button>
+        </div>
+        <div id="handRankCards" class="handRankCards"></div>
+        <div class="ruleText">
+          <h3>德州扑克流程</h3>
+          <p>每名玩家两张手牌，桌面最多五张公共牌。玩家用任意五张组成最大牌型。</p>
+          <p>每手牌依次经过翻牌前、翻牌圈、转牌圈、河牌圈。下注相等后进入下一圈。</p>
+          <p>可执行弃牌、过牌、跟注、下注、加注。最后摊牌时按牌型大小分配主池和边池。</p>
+        </div>
+      </div>
+    </aside>
+    <aside id="feedbackDrawer" class="sideDrawer feedbackDrawer">
+      <button id="feedbackToggle" class="sideToggle feedbackToggle" type="button" aria-label="提出意见">意见 &lt;</button>
+      <div class="rulesPanel feedbackPanel">
+        <div class="rulesHead">
+          <h2>提出意见</h2>
+          <button id="feedbackClose" class="ghost" type="button">收起</button>
+        </div>
+        <form id="feedbackForm" class="feedbackForm">
+          <label>
+            你的意见
+            <textarea id="feedbackText" maxlength="1200" placeholder="哪里不好用、哪里想改，都可以写在这里。"></textarea>
+          </label>
+          <div class="captchaBox">
+            <span id="feedbackCaptchaQuestion">验证码</span>
+            <button id="feedbackRefreshCaptcha" class="secondary" type="button">刷新</button>
+          </div>
+          <label>
+            验证码
+            <input id="feedbackCaptchaInput" inputmode="numeric" autocomplete="off" placeholder="请输入答案">
+          </label>
+          <button id="feedbackSubmit" type="submit">提交意见</button>
+          <p id="feedbackStatus" class="hint"></p>
+        </form>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+Music files in this folder are from OpenGameArt.org.
+
+Lobby:
+- Heavenly Loop.ogg
+- Author: isaiah658
+- Source: https://opengameart.org/content/heavenly-loop
+- License: CC0 / Public Domain
+
+Room playlist:
+- A Brand New Wisdom.ogg
+- Just Saying Tho.ogg
+- Winter Dust.ogg
+- Swinging Sweet.ogg
+- Author: hernandack
+- Source: https://opengameart.org/content/short-loops-background-music-pack
+- License: CC0 / Public Domain
+
+CC0: https://creativecommons.org/publicdomain/zero/1.0/
