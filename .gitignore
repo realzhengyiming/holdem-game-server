@@ -1,7 +1,7 @@
-.env
-data/*.sqlite
-data/*.sqlite-*
-*.log
-__tmp_*
 node_modules/
-public/music/room-loop.mp3
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+server.pid
+.git_status.txt
+.workbuddy/

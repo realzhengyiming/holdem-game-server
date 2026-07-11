@@ -40,6 +40,9 @@ const AVATAR_DIRS = [
   path.join(PUBLIC_DIR, "avatars", "default"),
   path.join(__dirname, "..", "default_user_face")
 ];
+const DEALER_DIRS = [
+  path.join(PUBLIC_DIR, "dealers")
+];
 const AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const EMOTES = new Map([
   ["wellPlayed", "打得不错"],
@@ -852,9 +855,33 @@ async function handleApi(req, res, url) {
       return json(res, 200, { token, user: publicUser(user) }, { "set-cookie": sessionCookie(token) });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/quick-login") {
+      const body = await readBody(req);
+      const email = normalizeEmail(body.email);
+      const username = normalizeUsername(body.username);
+      if (!isValidEmail(email)) {
+        return json(res, 400, { error: "邮箱格式不正确" });
+      }
+      if (username && !/^[\w\u4e00-\u9fa5 -]{2,20}$/.test(username)) {
+        return json(res, 400, { error: "昵称需要 2-20 个字符" });
+      }
+      const user = upsertCodeLoginUser(email, username);
+      const token = createSession(user.id);
+      return json(res, 200, { token, user: publicUser(user) }, { "set-cookie": sessionCookie(token) });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/logout") {
       deleteSession(authTokenFromRequest(req));
       return json(res, 200, { ok: true }, { "set-cookie": clearSessionCookie() });
+    }
+
+    // 无需登录的公共接口
+    if (req.method === "GET" && url.pathname === "/api/avatars") {
+      return json(res, 200, { avatars: listAvatars() });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/dealers") {
+      return json(res, 200, { dealers: listDealers() });
     }
 
     const user = requireUser(req);
@@ -874,10 +901,6 @@ async function handleApi(req, res, url) {
       }
       const updated = updateUserDisplayName(user.id, username);
       return json(res, 200, { user: publicUser(updated) });
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/avatars") {
-      return json(res, 200, { avatars: listAvatars() });
     }
 
     if (req.method === "GET" && url.pathname === "/api/rooms") {
@@ -1111,6 +1134,9 @@ function serveStatic(req, res, url) {
   if (url.pathname.startsWith("/avatars/")) {
     return serveAvatar(req, res, url);
   }
+  if (url.pathname.startsWith("/dealers/")) {
+    return serveDealer(req, res, url);
+  }
   const rawPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const filePath = path.normalize(path.join(PUBLIC_DIR, rawPath));
   if (!filePath.startsWith(PUBLIC_DIR)) {
@@ -1283,11 +1309,103 @@ function avatarFilePath(name) {
   return null;
 }
 
+function listDealers() {
+  const seen = new Set();
+  const dealers = [];
+  for (const dir of DEALER_DIRS) {
+    try {
+      for (const name of fs.readdirSync(dir)) {
+        if (seen.has(name) || !AVATAR_EXTENSIONS.has(path.extname(name).toLowerCase())) continue;
+        const filePath = path.join(dir, name);
+        if (!fs.statSync(filePath).isFile()) continue;
+        seen.add(name);
+        dealers.push({ name, url: `/dealers/${encodeURIComponent(name)}`, displayName: dealerDisplayName(name) });
+      }
+    } catch {
+      // Missing optional dealer directory is fine.
+    }
+  }
+  return dealers;
+}
+
+function dealerDisplayName(filename) {
+  const nameMap = {
+    "angelababy.jpg": "Angelababy",
+    "bailu.jpg": "白鹿",
+    "chengxiao.jpg": "程潇",
+    "dilraba.jpg": "迪丽热巴",
+    "gaoyuanyuan.jpg": "高圆圆",
+    "gulnazar.jpg": "古力娜扎",
+    "jiangshuying.jpg": "江疏影",
+    "jinchen.jpg": "金晨",
+    "liushishi.jpg": "刘诗诗",
+    "liuyifei.jpg": "刘亦菲",
+    "liyitong.jpg": "李一桐",
+    "nini.jpg": "倪妮",
+    "qinlan.jpg": "秦岚",
+    "songqian.jpg": "宋茜",
+    "sydney_sweeney.jpg": "Sydney Sweeney",
+    "tongliya.jpg": "佟丽娅",
+    "wangou.jpg": "王鸥",
+    "yangmi.jpg": "杨幂",
+    "yushuxin.jpg": "虞书欣",
+    "zhangjingyi.jpg": "张婧仪",
+    "zhaoliying.jpg": "赵丽颖",
+    "zhaolusi.jpg": "赵露思"
+  };
+  return nameMap[filename] || filename.replace(/\.[^.]+$/, "");
+}
+
+function isAllowedDealer(name) {
+  return listDealers().some((dealer) => dealer.name === name);
+}
+
+function randomDealer() {
+  const dealers = listDealers();
+  if (!dealers.length) return "/dealer-cat.png";
+  return `/dealers/${encodeURIComponent(dealers[crypto.randomInt(dealers.length)].name)}`;
+}
+
+function serveDealer(req, res, url) {
+  const requested = decodeURIComponent(url.pathname.slice("/dealers/".length));
+  if (!requested || path.basename(requested) !== requested || !AVATAR_EXTENSIONS.has(path.extname(requested).toLowerCase())) {
+    res.writeHead(404);
+    return res.end("Not found");
+  }
+  for (const dir of DEALER_DIRS) {
+    const filePath = path.join(dir, requested);
+    try {
+      if (!fs.statSync(filePath).isFile()) continue;
+      fs.readFile(filePath, (error, data) => {
+        if (error) {
+          res.writeHead(404);
+          return res.end("Not found");
+        }
+        const ext = path.extname(filePath).toLowerCase();
+        const type = {
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".webp": "image/webp"
+        }[ext] || "application/octet-stream";
+        res.writeHead(200, { "content-type": type, "cache-control": "public, max-age=3600" });
+        res.end(data);
+      });
+      return;
+    } catch {
+      // Try the next dealer directory.
+    }
+  }
+  res.writeHead(404);
+  res.end("Not found");
+}
+
 function normalizeRoomSettings(body) {
   const smallBlind = clampInt(body.smallBlind, SMALL_BLIND, 1, 100000);
   const bigBlind = clampInt(body.bigBlind, Math.max(BIG_BLIND, smallBlind * 2), smallBlind + 1, 200000);
   const startingChips = clampInt(body.startingChips, STARTING_CHIPS, bigBlind * 20, 10000000);
-  return { smallBlind, bigBlind, startingChips };
+  const maxSeats = clampInt(body.maxSeats, MAX_SEATS, 2, MAX_SEATS);
+  return { smallBlind, bigBlind, startingChips, maxSeats };
 }
 
 function clampInt(value, fallback, min, max) {
@@ -1312,14 +1430,17 @@ function createRoom(name, owner, settings = {}) {
   const smallBlind = settings.smallBlind || SMALL_BLIND;
   const bigBlind = settings.bigBlind || BIG_BLIND;
   const startingChips = settings.startingChips || STARTING_CHIPS;
+  const maxSeats = settings.maxSeats || MAX_SEATS;
   return {
     id: crypto.randomBytes(4).toString("hex").toUpperCase(),
     name,
     ownerId: owner.id,
     createdAt: Date.now(),
     testMode: isTestUser(owner) || isTestRoomName(name),
-    settings: { smallBlind, bigBlind, startingChips },
+    maxSeats,
+    settings: { smallBlind, bigBlind, startingChips, maxSeats },
     dealerTips: 0,
+    dealerImage: randomDealer(),
     turnTimer: null,
     nextHandTimer: null,
     chipAnimations: [],
@@ -1333,7 +1454,7 @@ function createRoom(name, owner, settings = {}) {
       chat: new Map(),
       dealerTip: new Map()
     },
-    seats: Array.from({ length: MAX_SEATS }, () => null),
+    seats: Array.from({ length: maxSeats }, () => null),
     messages: [],
     game: {
       status: "waiting",
@@ -1368,7 +1489,7 @@ function publicRoom(room) {
     id: room.id,
     name: room.name,
     seats: room.seats.filter(Boolean).length,
-    maxSeats: MAX_SEATS,
+    maxSeats: room.maxSeats || MAX_SEATS,
     status: room.game.status,
     handNumber: room.game.handNumber,
     ownerId: room.ownerId,
@@ -1438,8 +1559,9 @@ function occupiedSeats(room) {
 }
 
 function nextSeat(room, from, predicate = () => true) {
-  for (let step = 1; step <= MAX_SEATS; step += 1) {
-    const index = (from + step + MAX_SEATS) % MAX_SEATS;
+  const seatCount = room.seats.length;
+  for (let step = 1; step <= seatCount; step += 1) {
+    const index = (from + step + seatCount) % seatCount;
     const player = room.seats[index];
     if (player && predicate(player, index)) {
       return index;
@@ -1855,7 +1977,7 @@ function setPresetAction(room, user, payload) {
 }
 
 function processAutomaticTurns(room) {
-  let guard = MAX_SEATS * 8;
+  let guard = room.seats.length * 8;
   while (guard > 0 && isHandInProgress(room) && Number.isInteger(room.game.actingSeat)) {
     guard -= 1;
     const seatIndex = room.game.actingSeat;
@@ -2221,6 +2343,7 @@ function roomStateFor(room, viewerId) {
       board: room.game.board,
       pot: room.game.pot,
       dealerTips: room.dealerTips || 0,
+      dealerImage: room.dealerImage || "/dealer-cat.png",
       currentBet: room.game.currentBet,
       minimumFullWagerTotal: minimumFullWagerTotal(room),
       minRaise: room.game.minRaise,
@@ -2376,7 +2499,7 @@ function handleWsMessage(client, message) {
 
   if (payload.type === "sit") {
     const index = Number(payload.seat);
-    if (!Number.isInteger(index) || index < 0 || index >= MAX_SEATS) {
+    if (!Number.isInteger(index) || index < 0 || index >= room.seats.length) {
       throw new Error("座位不存在");
     }
     const currentIndex = room.seats.findIndex((seat) => seat && seat.userId === client.user.id);
@@ -2460,6 +2583,15 @@ function handleWsMessage(client, message) {
     player.avatar = requested && isAllowedAvatar(requested) ? requested : randomAvatar(player.avatar);
     room.game.lastAction = `${client.user.username} 更换了头像`;
     broadcastRoom(room);
+  } else if (payload.type === "switchDealer") {
+    const requested = String(payload.dealer || "");
+    if (requested && isAllowedDealer(requested)) {
+      room.dealerImage = `/dealers/${encodeURIComponent(requested)}`;
+    } else {
+      room.dealerImage = randomDealer();
+    }
+    room.game.lastAction = `${client.user.username} 更换了荷官`;
+    broadcastRoom(room);
   } else if (payload.type === "emote") {
     const fromSeat = room.seats.findIndex((seat) => seat && seat.userId === client.user.id);
     if (fromSeat === -1) throw new Error("你还没有入座");
@@ -2470,7 +2602,7 @@ function handleWsMessage(client, message) {
     let targetSeat = rawTargetSeat === null || rawTargetSeat === undefined || rawTargetSeat === "" ? null : Number(rawTargetSeat);
     if (targetSeat !== null && !Number.isInteger(targetSeat)) throw new Error("互动目标不存在");
     if (targetSeat === fromSeat) targetSeat = null;
-    if (targetSeat !== null && (!room.seats[targetSeat] || targetSeat < 0 || targetSeat >= MAX_SEATS)) {
+    if (targetSeat !== null && (!room.seats[targetSeat] || targetSeat < 0 || targetSeat >= room.seats.length)) {
       throw new Error("互动目标不存在");
     }
     const target = targetSeat !== null ? room.seats[targetSeat] : null;
