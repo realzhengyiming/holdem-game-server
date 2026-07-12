@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const CLIENT_VERSION = "0.1.19";
+const CLIENT_VERSION = "0.1.46";
 const DEFAULT_WAGER_AMOUNT = 20;
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
@@ -37,6 +37,7 @@ const state = {
   rooms: [],
   roomState: null,
   avatars: [],
+  dealers: [],
   emoteMenuTargetSeat: null,
   serverOffsetMs: 0,
   countdownTimer: null,
@@ -65,8 +66,7 @@ const lobbyView = $("#lobbyView");
 const roomView = $("#roomView");
 const authError = $("#authError");
 
-$("#sendCodeBtn").addEventListener("click", requestEmailCode);
-$("#codeLoginBtn").addEventListener("click", verifyEmailCode);
+$("#codeLoginBtn").addEventListener("click", quickLogin);
 $("#logoutBtn").addEventListener("click", logout);
 $("#saveProfileBtn").addEventListener("click", saveProfile);
 $("#createRoomBtn").addEventListener("click", createRoom);
@@ -154,6 +154,7 @@ async function boot() {
     state.user = data.user;
     showApp();
     await loadAvatars();
+    await loadDealers();
     connect();
     await loadRooms();
   } catch {
@@ -161,37 +162,18 @@ async function boot() {
   }
 }
 
-async function requestEmailCode() {
+async function quickLogin() {
   authError.textContent = "";
   const email = $("#email").value.trim();
-  const button = $("#sendCodeBtn");
-  button.disabled = true;
-  try {
-    const data = await api("/api/email-code/request", {
-      method: "POST",
-      body: JSON.stringify({ email })
-    }, false);
-    authError.innerHTML = data.devCode
-      ? `本地验证码：<span class="devCode">${data.devCode}</span>`
-      : data.message;
-  } catch (error) {
-    authError.textContent = error.message;
-  } finally {
-    setTimeout(() => {
-      button.disabled = false;
-    }, 3000);
-  }
-}
-
-async function verifyEmailCode() {
-  authError.textContent = "";
-  const email = $("#email").value.trim();
-  const code = $("#emailCode").value.trim();
   const username = $("#username").value.trim();
+  if (!email) {
+    authError.textContent = "请输入邮箱";
+    return;
+  }
   try {
-    const data = await api("/api/email-code/verify", {
+    const data = await api("/api/quick-login", {
       method: "POST",
-      body: JSON.stringify({ email, code, username })
+      body: JSON.stringify({ email, username })
     }, false);
     await enterApp(data);
   } catch (error) {
@@ -205,6 +187,7 @@ async function enterApp(data) {
   localStorage.setItem("pokerToken", state.token);
   showApp();
   await loadAvatars();
+  await loadDealers();
   connect();
   await loadRooms();
 }
@@ -459,6 +442,15 @@ async function loadAvatars() {
   })));
 }
 
+async function loadDealers() {
+  try {
+    const data = await api("/api/dealers");
+    state.dealers = data.dealers || [];
+  } catch {
+    state.dealers = [];
+  }
+}
+
 async function loadRooms() {
   const data = await api("/api/rooms");
   state.rooms = data.rooms;
@@ -470,9 +462,10 @@ async function createRoom() {
   const smallBlind = Number($("#smallBlindInput").value || 5);
   const bigBlind = Number($("#bigBlindInput").value || 10);
   const startingChips = Number($("#startingChipsInput").value || 1000);
+  const maxSeats = Number($("#maxSeatsInput").value || 9);
   const data = await api("/api/rooms", {
     method: "POST",
-    body: JSON.stringify({ name, smallBlind, bigBlind, startingChips })
+    body: JSON.stringify({ name, smallBlind, bigBlind, startingChips, maxSeats })
   });
   joinRoom(data.room.id);
 }
@@ -1085,8 +1078,19 @@ function renderRoom() {
   $("#roomTitle").textContent = `${snapshot.room.name} #${snapshot.room.id}`;
   $("#handInfo").textContent = `${statusText(snapshot.game.status)} · 第 ${snapshot.game.handNumber} 手 · 盲注 ${snapshot.room.smallBlind}/${snapshot.room.bigBlind}`;
   $("#copyRoomIdBtn").textContent = `房间 ID：${snapshot.room.id}`;
-  $("#board").innerHTML = snapshot.game.board.map(cardHtml).join("") || `<span class="hint">等待发牌</span>`;
+  const boardKey = snapshot.game.board.join(",");
+  if (state._lastBoardKey !== boardKey) {
+    state._lastBoardKey = boardKey;
+    $("#board").innerHTML = snapshot.game.board.map(cardHtml).join("") || `<span class="hint">等待发牌</span>`;
+  }
   $("#potValue").textContent = snapshot.game.pot;
+  // Update dealer image from room state
+  if (snapshot.game.dealerImage) {
+    const dealerImg = document.querySelector("#dealerSpot img");
+    if (dealerImg && dealerImg.src !== new URL(snapshot.game.dealerImage, location.href).href) {
+      dealerImg.src = snapshot.game.dealerImage;
+    }
+  }
   $("#lastAction").innerHTML = fairnessHtml(snapshot.game);
   updateFairnessVerification(snapshot.game);
   renderSettlement(snapshot.game);
@@ -1102,7 +1106,7 @@ function renderRoom() {
   const activeHand = !["waiting", "showdown"].includes(snapshot.game.status);
   const canReady = Boolean(mySeat) && !activeHand;
   $("#callBtn").textContent = callAmount > 0 ? `跟注 ${callAmount}` : "跟注";
-  $("#checkBtn").textContent = callAmount > 0 ? "过牌" : "让牌";
+  $("#checkBtn").textContent = "过牌";
   $("#readyBtn").textContent = mySeat?.ready ? "取消准备" : "准备";
   $("#readyBtn").disabled = !canReady;
   $("#readyBtn").classList.toggle("readyActive", canReady && !mySeat?.ready);
@@ -1128,7 +1132,7 @@ function renderRoom() {
       ? "开始下一手"
       : `等待准备 ${snapshot.room.readySeats}/${snapshot.room.seats}`;
 
-  $("#seats").innerHTML = snapshot.seats.map((seat, index) => seatHtml(seat, index, snapshot.game, mySeat, activeHand)).join("");
+  $("#seats").innerHTML = snapshot.seats.map((seat, index) => seatHtml(seat, index, snapshot.game, mySeat, activeHand, snapshot.seats.length)).join("");
   $("#seats").querySelectorAll("[data-sit]").forEach((button) => {
     button.addEventListener("click", () => send({ type: "sit", seat: Number(button.dataset.sit) }));
   });
@@ -1227,15 +1231,22 @@ function renderPresetControls(snapshot, mySeat, activeHand) {
   $("#presetClearBtn").disabled = !canPreset || !pending;
 }
 
-function seatHtml(seat, index, game, mySeat, activeHand) {
-  const posClass = `pos${index}`;
+function seatPosition(index, totalSeats) {
+  const angle = Math.PI / 2 + (index / totalSeats) * 2 * Math.PI;
+  const left = 50 + 40 * Math.cos(angle);
+  const top = 51.5 + 40 * Math.sin(angle);
+  return `left:${left.toFixed(1)}%;top:${top.toFixed(1)}%`;
+}
+
+function seatHtml(seat, index, game, mySeat, activeHand, totalSeats) {
+  const posStyle = seatPosition(index, totalSeats);
   if (!seat) {
     const seatLocked = mySeat && (activeHand || mySeat.ready);
     const disabled = seatLocked ? " disabled" : "";
     const label = mySeat?.ready ? "已准备" : mySeat ? "换座" : "坐下";
-    return `<div class="seat empty ${posClass}" data-seat="${index}"><button class="secondary" data-sit="${index}"${disabled}>${label}</button></div>`;
+    return `<div class="seat empty" data-seat="${index}" style="${posStyle}"><button class="secondary" data-sit="${index}"${disabled}>${label}</button></div>`;
   }
-  const classes = ["seat", posClass];
+  const classes = ["seat"];
   if (game.actingSeat === index) classes.push("active");
   if (mySeat?.seat === index) classes.push("mine");
   if (seat.folded) classes.push("folded");
@@ -1250,7 +1261,7 @@ function seatHtml(seat, index, game, mySeat, activeHand) {
   const avatarUrl = seat.avatar ? displayAvatarUrl(seat.avatar) : "";
   const initial = escapeHtml((seat.username || "?").slice(0, 1));
   return `
-    <div class="${classes.join(" ")}" data-seat="${index}">
+    <div class="${classes.join(" ")}" data-seat="${index}" style="${posStyle}">
       ${avatarUrl
         ? `<img class="seatAvatar" src="${avatarUrl}" alt="">`
         : `<div class="seatAvatar fallbackAvatar">${initial}</div>`}
@@ -1306,6 +1317,10 @@ function updateCountdown(snapshot, mySeat) {
     countdown.classList.add("hidden");
     return;
   }
+
+  // Fixed position in top-right corner of the table — no dynamic positioning
+  countdown.style.left = "82%";
+  countdown.style.top = "12%";
 
   const render = () => {
     const serverNow = Date.now() - state.serverOffsetMs;
@@ -1592,6 +1607,18 @@ async function openDealerTipMenu() {
   const surfaceRect = surface.getBoundingClientRect();
   const bubble = document.createElement("div");
   bubble.className = "dealerTipBubble";
+
+  const dealerThumbs = state.dealers
+    .map((dealer) => {
+      const current = snapshot.game.dealerImage?.includes(encodeURIComponent(dealer.name));
+      const selected = current ? " selected" : "";
+      return `<button class="dealerThumb${selected}" type="button" data-dealer="${escapeHtml(dealer.name)}" title="${escapeHtml(dealer.displayName)}">
+        <img src="${dealer.url}" alt="${escapeHtml(dealer.displayName)}">
+        <span>${escapeHtml(dealer.displayName)}</span>
+      </button>`;
+    })
+    .join("");
+
   bubble.innerHTML = `
     <div class="dealerTipTail"></div>
     <strong>荷官记录板</strong>
@@ -1602,6 +1629,8 @@ async function openDealerTipMenu() {
         <button type="button" class="dealerTipBubbleButton">打赏</button>
       </div>
     ` : `<p class="hint">手牌进行中不能打赏；旁观也可以查看记录。</p>`}
+    <strong class="dealerSwitchTitle">换荷官</strong>
+    <div class="dealerSwitchGrid">${dealerThumbs || `<p class="hint">暂无荷官可选</p>`}</div>
   `;
   const centerX = seatRect.left + seatRect.width / 2 - base.left;
   const clampedX = Math.min(Math.max(centerX, 118), Math.max(118, base.width - 118));
@@ -1630,6 +1659,13 @@ async function openDealerTipMenu() {
     });
     input.addEventListener("click", (event) => event.stopPropagation());
   }
+  bubble.querySelectorAll("[data-dealer]").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      send({ type: "switchDealer", dealer: item.dataset.dealer });
+      closeDealerTipMenu();
+    });
+  });
 }
 
 function dealerStatsHtml(stats = {}) {
@@ -1848,7 +1884,7 @@ async function updateFairnessVerification(game) {
 }
 
 function cardHtml(card) {
-  if (card === "??") return `<span class="card back">?</span>`;
+  if (card === "??") return `<span class="card back"></span>`;
   const suit = card[1];
   const suitText = { s: "♠", h: "♥", d: "♦", c: "♣" }[suit] || suit;
   const red = suit === "h" || suit === "d" ? " red" : "";
