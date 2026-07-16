@@ -59,7 +59,7 @@ for PORT_PID in $(port_pids); do
 done
 
 echo "启动服务 HOST=$HOST PORT=$PORT"
-HOST="$HOST" PORT="$PORT" NODE_ENV="$NODE_ENV" nohup node server.js > "$LOG_FILE" 2>&1 &
+HOST="$HOST" PORT="$PORT" NODE_ENV="$NODE_ENV" nohup node --experimental-sqlite server.js > "$LOG_FILE" 2>&1 &
 NEW_PID="$!"
 echo "$NEW_PID" > "$PID_FILE"
 sleep 0.8

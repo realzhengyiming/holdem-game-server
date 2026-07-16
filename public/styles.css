@@ -3952,6 +3952,11 @@ body.room-active {
 
 /* Keep drawer handles out of the mobile action deck (notably iOS Safari). */
 @media (max-width: 860px) and (orientation: portrait) {
+  /* Safari's browser chrome changes the visual viewport; match the table's 100dvh. */
+  .room-active .sideDrawer {
+    height: 100dvh;
+  }
+
   .room-active .sideToggle {
     bottom: calc(192px + env(safe-area-inset-bottom, 0px));
     width: 54px;

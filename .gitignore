@@ -3,6 +3,7 @@ data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
 server.pid
+.auto-update.lock
 *.log
 .git_status.txt
 .workbuddy/

@@ -61,6 +61,35 @@ bash scripts/restart.sh
 PORT=3000 bash scripts/restart.sh
 ```
 
+### 自动拉取并重启（Linux）
+
+推荐使用项目内置的 `systemd timer`，而不是 crontab：它会记录到系统日志、开机后会自动恢复，并且一次检查未完成时不会并发执行。定时任务默认每分钟检查一次 `origin/main`；只有远程有新提交时才会 `git pull --ff-only` 并重启服务。
+
+首次部署完成后，在项目根目录运行：
+
+```bash
+sudo bash scripts/install-auto-update-timer.sh
+```
+
+如果要跟踪其他分支，例如 `dev`：
+
+```bash
+sudo UPDATE_BRANCH=dev bash scripts/install-auto-update-timer.sh
+```
+
+查看运行状态和日志：
+
+```bash
+systemctl status holdem-auto-update.timer
+journalctl -u holdem-auto-update.service -n 100 --no-pager
+```
+
+脚本会在以下情况停止而不重启：服务器目录有未提交的本地改动、分支发生分叉，或本地提交领先远程。手动检查一次可运行：
+
+```bash
+bash scripts/update-and-restart.sh
+```
+
 ## 邮箱验证码配置
 
 验证码邮件通过 SMTP 发送。部署时建议设置：
