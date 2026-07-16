@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const CLIENT_VERSION = "0.1.63";
+const CLIENT_VERSION = "0.1.70";
 const DEFAULT_WAGER_AMOUNT = 20;
 const EMOTES = [
   { key: "wellPlayed", text: "打得不错" },
@@ -38,6 +38,7 @@ const state = {
   roomState: null,
   avatars: [],
   dealers: [],
+  dealerPage: 0,
   emoteMenuTargetSeat: null,
   serverOffsetMs: 0,
   countdownTimer: null,
@@ -541,53 +542,29 @@ async function lookupRoom() {
   result.classList.remove("hidden");
   result.innerHTML = `<p class="hint">查询中...</p>`;
   try {
-    const [activeResult, historyResult] = await Promise.allSettled([
-      api(`/api/rooms/${encodeURIComponent(roomId)}`),
-      api(`/api/history/rooms/${encodeURIComponent(roomId)}`)
-    ]);
-    const activeRoom = activeResult.status === "fulfilled" ? activeResult.value.room : null;
-    const history = historyResult.status === "fulfilled" ? historyResult.value : null;
-    if (!activeRoom && !history) {
-      result.innerHTML = `<p class="error">没找到这个房间。</p>`;
+    const response = await api(`/api/rooms/${encodeURIComponent(roomId)}`);
+    const activeRoom = response.room;
+    if (!activeRoom) {
+      result.innerHTML = `<p class="error">没找到这个当前在线房间。</p>`;
       return;
     }
-    result.innerHTML = renderRoomLookupResult(activeRoom, history, roomId);
+    result.innerHTML = renderRoomLookupResult(activeRoom, roomId);
     result.querySelector("[data-lookup-join]")?.addEventListener("click", () => joinRoom(activeRoom.id));
   } catch (error) {
     result.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
   }
 }
 
-function renderRoomLookupResult(activeRoom, history, roomId) {
-  const room = history?.room;
-  const participants = history?.participants || [];
-  const rows = participants.length
-    ? participants.map((item) => `
-      <div class="ledgerRow">
-        <span>${escapeHtml(item.username)}</span>
-        <span>买入 ${escapeHtml(item.buy_in_chips)}</span>
-        <span>剩余 ${escapeHtml(item.final_chips)}</span>
-        <strong class="${item.net_chips >= 0 ? "gain" : "loss"}">${item.net_chips >= 0 ? "+" : ""}${escapeHtml(item.net_chips)}</strong>
-      </div>
-    `).join("")
-    : `<p class="hint">还没有玩家入座记录。</p>`;
+function renderRoomLookupResult(activeRoom, roomId) {
   return `
     <div class="lookupCard">
       <div class="lookupHead">
         <div>
-          <strong>${escapeHtml(activeRoom?.name || room?.name || "历史房间")}</strong>
-          <p class="hint">#${escapeHtml(activeRoom?.id || room?.id || roomId)}${activeRoom ? " · 当前在线" : " · 历史记录"}</p>
+          <strong>${escapeHtml(activeRoom.name || "牌桌")}</strong>
+          <p class="hint">#${escapeHtml(activeRoom.id || roomId)} · 当前在线</p>
         </div>
-        ${activeRoom ? `<button type="button" data-lookup-join>进入</button>` : ""}
+        <button type="button" data-lookup-join>进入</button>
       </div>
-      ${room ? `
-        <div class="ledgerSummary">
-          <span>手数 ${escapeHtml(room.hand_count || 0)}</span>
-          <span>盲注 ${escapeHtml(room.small_blind)}/${escapeHtml(room.big_blind)}</span>
-          <span>荷官打赏 ${escapeHtml(room.dealer_tips || 0)}</span>
-        </div>
-        <div class="ledgerRows">${rows}</div>
-      ` : `<p class="hint">这是当前在线房间，暂时还没有历史账本。</p>`}
     </div>
   `;
 }
@@ -1351,8 +1328,8 @@ function seatHtml(seat, index, game, mySeat, activeHand, totalSeats) {
       <div class="seatBody">
         <div class="seatTop">
           <span class="seatName">${escapeHtml(seat.username)}</span>
-          <span class="stack"><span class="chipIcon"></span>${seat.chips}</span>
         </div>
+        <span class="stack seatStack"><span class="chipIcon"></span>${seat.chips}</span>
         <div class="cards">${seat.hole.map(cardHtml).join("")}</div>
         <div class="badges">${badges.map((item) => `<span class="badge">${item}</span>`).join("")}</div>
         <p class="hint">${escapeHtml(seat.result || (seat.folded ? "已弃牌" : ""))}</p>
@@ -1711,7 +1688,11 @@ async function openDealerTipMenu() {
   const bubble = document.createElement("div");
   bubble.className = "dealerTipBubble";
 
+  const dealersPerPage = 4;
+  const dealerPageCount = Math.max(1, Math.ceil(state.dealers.length / dealersPerPage));
+  state.dealerPage = Math.min(Math.max(0, state.dealerPage), dealerPageCount - 1);
   const dealerThumbs = state.dealers
+    .slice(state.dealerPage * dealersPerPage, (state.dealerPage + 1) * dealersPerPage)
     .map((dealer) => {
       const current = snapshot.game.dealerImage?.includes(encodeURIComponent(dealer.name));
       const selected = current ? " selected" : "";
@@ -1724,19 +1705,22 @@ async function openDealerTipMenu() {
 
   bubble.innerHTML = `
     <div class="dealerTipTail"></div>
-    <strong>荷官记录板</strong>
-    <div class="dealerStats">正在查询历史最...</div>
     ${canTip ? `
       <div class="dealerTipControls">
         <input class="dealerTipBubbleAmount" type="number" min="1" step="1" value="5">
         <button type="button" class="dealerTipBubbleButton">打赏</button>
       </div>
-    ` : `<p class="hint">手牌进行中不能打赏；旁观也可以查看记录。</p>`}
-    <strong class="dealerSwitchTitle">换荷官</strong>
-    <div class="dealerSwitchGrid">${dealerThumbs || `<p class="hint">暂无荷官可选</p>`}</div>
+    ` : `<p class="dealerTipUnavailable">仅等待或结算时可打赏</p>`}
+    <div class="dealerPickerRow">
+      <button class="dealerPager" type="button" data-dealer-page="previous" aria-label="上一页荷官"${state.dealerPage === 0 ? " disabled" : ""}>‹</button>
+      <div class="dealerSwitchGrid">${dealerThumbs || `<p class="hint">暂无荷官可选</p>`}</div>
+      <button class="dealerPager" type="button" data-dealer-page="next" aria-label="下一页荷官"${state.dealerPage >= dealerPageCount - 1 ? " disabled" : ""}>›</button>
+    </div>
+    ${state.dealers.length > dealersPerPage ? `<span class="dealerPage">${state.dealerPage + 1}/${dealerPageCount}</span>` : ""}
   `;
   const centerX = seatRect.left + seatRect.width / 2 - base.left;
-  const clampedX = Math.min(Math.max(centerX, 118), Math.max(118, base.width - 118));
+  const halfWidth = Math.min(160, Math.max(100, (base.width - 20) / 2));
+  const clampedX = Math.min(Math.max(centerX, halfWidth + 6), Math.max(halfWidth + 6, base.width - halfWidth - 6));
   const fromBottom = base.bottom - seatRect.top;
   const nearBottom = seatRect.top > surfaceRect.top + surfaceRect.height * 0.58;
   bubble.style.left = `${clampedX}px`;
@@ -1747,12 +1731,6 @@ async function openDealerTipMenu() {
     bubble.classList.add("dropDown");
   }
   host.appendChild(bubble);
-  try {
-    const history = await api(`/api/history/rooms/${encodeURIComponent(snapshot.room.id)}`);
-    bubble.querySelector(".dealerStats").innerHTML = dealerStatsHtml(history.stats);
-  } catch (error) {
-    bubble.querySelector(".dealerStats").innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
-  }
   const input = bubble.querySelector(".dealerTipBubbleAmount");
   const button = bubble.querySelector(".dealerTipBubbleButton");
   if (input && button) {
@@ -1769,29 +1747,13 @@ async function openDealerTipMenu() {
       closeDealerTipMenu();
     });
   });
-}
-
-function dealerStatsHtml(stats = {}) {
-  const ms = (value) => {
-    const seconds = Math.round(Number(value || 0) / 1000);
-    if (!seconds) return "暂无";
-    const minutes = Math.floor(seconds / 60);
-    const rest = seconds % 60;
-    return minutes ? `${minutes}分${rest}秒` : `${rest}秒`;
-  };
-  const userValue = (item, empty = "暂无") => item?.username ? `${escapeHtml(item.username)} ${escapeHtml(item.value)}` : empty;
-  const handValue = (item, formatter = (value) => value) => item?.hand_number ? `第 ${escapeHtml(item.hand_number)} 手 · ${escapeHtml(formatter(item.value))}` : "暂无";
-  return `
-    <div class="dealerStatsGrid">
-      <div><span>历史最高筹码</span><strong>${userValue(stats.highestStack)}</strong></div>
-      <div><span>历史最大赢家</span><strong>${userValue(stats.biggestWin)}</strong></div>
-      <div><span>历史最大亏损</span><strong>${userValue(stats.biggestLoss)}</strong></div>
-      <div><span>历史最大底池</span><strong>${handValue(stats.biggestPot)}</strong></div>
-      <div><span>历史最长单局</span><strong>${handValue(stats.longestHand, ms)}</strong></div>
-      <div><span>最多打赏荷官</span><strong>${userValue(stats.mostTips)}</strong></div>
-    </div>
-    <p class="hint">已记录 ${escapeHtml(stats.handCount || 0)} 手牌、${escapeHtml(stats.actionCount || 0)} 个动作。</p>
-  `;
+  bubble.querySelectorAll("[data-dealer-page]").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.dealerPage += item.dataset.dealerPage === "next" ? 1 : -1;
+      openDealerTipMenu();
+    });
+  });
 }
 
 function closeDealerTipMenu() {
