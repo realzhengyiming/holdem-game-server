@@ -56,6 +56,7 @@ const state = {
   feedbackChallengeId: "",
   countdownAlertKey: "",
   version: CLIENT_VERSION,
+  updatedAt: "",
   lastRoomId: localStorage.getItem("pokerLastRoomId") || "",
   lastWagerAmount: Number(localStorage.getItem("pokerLastWagerAmount") || DEFAULT_WAGER_AMOUNT),
   preferredOrientation: localStorage.getItem("pokerPreferredOrientation") || "portrait"
@@ -300,7 +301,7 @@ function connect() {
         state.serverOffsetMs = Date.now() - message.serverNow;
       }
       state.rooms = message.rooms || [];
-      if (message.version) setVersionLabel(message.version);
+      if (message.version) setVersionLabel(message.version, message.updatedAt);
       renderRooms();
       if (!state.roomState && message.music) syncBgm(message.music, "lobby");
     } else if (message.type === "roomState") {
@@ -310,7 +311,7 @@ function connect() {
       state.roomState = message;
       state.lastRoomId = message.room.id;
       localStorage.setItem("pokerLastRoomId", state.lastRoomId);
-      if (message.version) setVersionLabel(message.version);
+      if (message.version) setVersionLabel(message.version, message.updatedAt);
       if (message.game?.music) syncBgm(message.game.music, `room:${message.room.id}`);
       renderRoom();
     } else if (message.type === "interaction") {
@@ -629,6 +630,7 @@ async function logout() {
 }
 
 function showAuth() {
+  document.body.classList.remove("lobby-active");
   authView.classList.remove("hidden");
   appView.classList.add("hidden");
   closeSpectatorsDrawer();
@@ -639,6 +641,7 @@ function showAuth() {
 }
 
 function showApp() {
+  if (!document.body.classList.contains("room-active")) document.body.classList.add("lobby-active");
   authView.classList.add("hidden");
   appView.classList.remove("hidden");
   $("#userLabel").textContent = state.user ? state.user.username : "未登录";
@@ -657,6 +660,7 @@ function renderProfile() {
 
 function showLobby() {
   document.body.classList.remove("room-active");
+  document.body.classList.add("lobby-active");
   if (state.roomState) send({ type: "leaveRoom" });
   lobbyView.classList.remove("hidden");
   roomView.classList.add("hidden");
@@ -672,6 +676,7 @@ function showLobby() {
 
 function showRoom() {
   document.body.classList.add("room-active");
+  document.body.classList.remove("lobby-active");
   lobbyView.classList.add("hidden");
   roomView.classList.remove("hidden");
   $("#spectatorsDrawer")?.classList.remove("hidden");
@@ -739,10 +744,33 @@ function showToast(message, tone = "info") {
   }, 3200);
 }
 
-function setVersionLabel(version) {
+function setVersionLabel(version, updatedAt) {
   state.version = version || CLIENT_VERSION;
   const label = $("#versionLabel");
   if (label) label.textContent = `v${state.version}`;
+  if (updatedAt) state.updatedAt = updatedAt;
+  renderUpdateStamp();
+}
+
+function renderUpdateStamp() {
+  const stamp = $("#updateStamp");
+  if (!stamp || !state.updatedAt) return;
+  const updated = new Date(state.updatedAt);
+  if (Number.isNaN(updated.getTime())) return;
+  const date = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(updated).replaceAll("/", ".");
+  const time = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(updated);
+  stamp.dateTime = state.updatedAt;
+  stamp.innerHTML = `<span>${date}</span><span>${time}</span>`;
 }
 
 function toggleBgmMuted() {

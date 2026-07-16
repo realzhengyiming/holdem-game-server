@@ -287,6 +287,22 @@ p {
   letter-spacing: 0;
 }
 
+.updateStamp {
+  position: fixed;
+  top: max(3px, env(safe-area-inset-top, 0px));
+  right: max(6px, env(safe-area-inset-right, 0px));
+  z-index: 120;
+  display: grid;
+  gap: 1px;
+  color: rgb(223 255 242 / 76%);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  pointer-events: none;
+  text-align: right;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 72%);
+}
+
 .soundToggle {
   min-width: 82px;
 }
@@ -3982,5 +3998,140 @@ body.room-active {
 
   .room-active .feedbackDrawer .sideToggle {
     left: -70px;
+  }
+}
+
+/* A compact, non-scrolling lobby for phone-sized screens. */
+@media (max-width: 860px) {
+  body.lobby-active {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .lobby-active .shell,
+  .lobby-active .app {
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .lobby-active .shell {
+    width: 100vw;
+    padding: 4px;
+  }
+
+  .lobby-active .app {
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr);
+  }
+
+  .lobby-active .topbar {
+    min-height: 0;
+    margin: 0;
+    flex-direction: row;
+    align-items: center;
+    font-size: 11px;
+  }
+
+  .lobby-active .topActions {
+    gap: 3px;
+  }
+
+  .lobby-active .topActions button {
+    min-width: 0;
+    min-height: 27px;
+    padding: 0 6px;
+    font-size: 10px;
+  }
+
+  .lobby-active #lobbyView {
+    height: 100%;
+    min-height: 0;
+    grid-template-columns: minmax(142px, 0.88fr) minmax(0, 1.12fr);
+    gap: 5px;
+    overflow: hidden;
+  }
+
+  .lobby-active .lobbyTools,
+  .lobby-active .roomList {
+    min-height: 0;
+    gap: 6px;
+    padding: 7px;
+  }
+
+  .lobby-active .lobbyTools {
+    align-content: start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .lobby-active .roomList {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .lobby-active .profileBox {
+    gap: 5px;
+    padding-bottom: 6px;
+  }
+
+  .lobby-active .profileBox h2,
+  .lobby-active .sectionHead h2,
+  .lobby-active .lobbyTools > h2 {
+    font-size: 14px;
+  }
+
+  .lobby-active label {
+    gap: 3px;
+    font-size: 10px;
+  }
+
+  .lobby-active .lobbyTools input,
+  .lobby-active .lobbyTools select,
+  .lobby-active .roomList input,
+  .lobby-active .lobbyTools button,
+  .lobby-active .roomList button {
+    min-height: 28px;
+    padding-inline: 6px;
+    font-size: 10px;
+  }
+
+  .lobby-active .settingGrid {
+    gap: 5px;
+  }
+
+  .lobby-active .lobbyTools > .hint {
+    display: none;
+  }
+
+  .lobby-active .roomLookup,
+  .lobby-active .lookupCard {
+    gap: 5px;
+  }
+
+  .lobby-active .roomItem,
+  .lobby-active .resumeRoom {
+    gap: 5px;
+    padding: 7px 0;
+  }
+
+  .lobby-active .roomItem strong,
+  .lobby-active .roomItem .hint,
+  .lobby-active .resumeRoom strong,
+  .lobby-active .resumeRoom .hint {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .lobby-active #rooms {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .lobby-active .updateStamp {
+    top: max(2px, env(safe-area-inset-top, 0px));
+    right: max(3px, env(safe-area-inset-right, 0px));
+    font-size: 8px;
   }
 }

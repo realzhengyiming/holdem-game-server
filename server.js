@@ -6,6 +6,7 @@ const net = require("net");
 const tls = require("tls");
 const path = require("path");
 const crypto = require("crypto");
+const { execFileSync } = require("child_process");
 const { DatabaseSync } = require("node:sqlite");
 const { URL } = require("url");
 const packageInfo = require("./package.json");
@@ -36,6 +37,7 @@ const SESSION_TTL_MS = clampConfigInt(process.env.SESSION_TTL_MS, 30 * 24 * 60 *
 const MAX_WS_MESSAGE_BYTES = 64 * 1024;
 const MAX_WS_BUFFER_BYTES = 128 * 1024;
 const APP_VERSION = process.env.APP_VERSION || packageInfo.version || "0.1.0";
+const DEPLOYED_AT = gitLatestCommitTime();
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "poker.sqlite");
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -46,6 +48,18 @@ const AVATAR_DIRS = [
 const DEALER_DIRS = [
   path.join(PUBLIC_DIR, "dealers")
 ];
+
+function gitLatestCommitTime() {
+  try {
+    return execFileSync("git", ["log", "-1", "--format=%cI"], {
+      cwd: __dirname,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return "";
+  }
+}
 const AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const EMOTES = new Map([
   ["wellPlayed", "打得不错"],
@@ -789,7 +803,7 @@ function updateUserDisplayName(userId, username) {
 async function handleApi(req, res, url) {
   try {
     if (req.method === "GET" && url.pathname === "/api/version") {
-      return json(res, 200, { version: APP_VERSION, startedAt: SERVER_STARTED_AT });
+      return json(res, 200, { version: APP_VERSION, updatedAt: DEPLOYED_AT, startedAt: SERVER_STARTED_AT });
     }
 
     if (req.method === "POST" && url.pathname === "/api/register") {
@@ -1522,6 +1536,7 @@ function publicLobbyPayload() {
     rooms: [...rooms.values()].map(publicRoom),
     music: LOBBY_MUSIC,
     version: APP_VERSION,
+    updatedAt: DEPLOYED_AT,
     serverNow: Date.now()
   };
 }
@@ -2410,6 +2425,7 @@ function roomStateFor(room, viewerId) {
       music: room.music
     },
     version: APP_VERSION,
+    updatedAt: DEPLOYED_AT,
     seats: room.seats.map((player, seat) => player ? {
       seat,
       userId: player.userId,
