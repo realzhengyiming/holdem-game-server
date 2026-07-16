@@ -865,9 +865,6 @@ async function handleApi(req, res, url) {
       if (!isValidEmail(email)) {
         return json(res, 400, { error: "邮箱格式不正确" });
       }
-      if (!SMTP_HOST && !isLoopbackAddress(req.socket.remoteAddress)) {
-        return json(res, 503, { error: "邮件服务尚未配置，远程登录已停用" });
-      }
       const availableAt = emailCodeRequestCooldowns.get(email) || 0;
       if (availableAt > Date.now()) {
         return json(res, 429, { error: `请求太频繁，请 ${Math.ceil((availableAt - Date.now()) / 1000)} 秒后再试` });
