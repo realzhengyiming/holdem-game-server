@@ -67,13 +67,12 @@ async def proxy_websocket(client: WebSocket) -> None:
     """Bidirectional transparent WebSocket relay for real-time game events."""
     await client.accept()
     query = f"?{client.url.query}" if client.url.query else ""
-    headers = forwarded_headers(dict(client.headers))
     try:
-        # websockets renamed ``extra_headers`` to ``additional_headers`` in v14.
-        # Supporting both makes local development and Linux deployment predictable.
-        major = int(websockets.__version__.split(".")[0])
-        connect_headers = {"additional_headers": headers} if major >= 14 else {"extra_headers": headers}
-        async with websockets.connect(f"{LEGACY_WS_URL}{query}", **connect_headers) as engine:
+        # The token is deliberately kept in the query string.  Do not forward
+        # the client's Sec-WebSocket-* handshake headers: the upstream client
+        # creates its own values, and duplicate keys can leave a connection
+        # open without relaying its first ``hello`` packet.
+        async with websockets.connect(f"{LEGACY_WS_URL}{query}") as engine:
             async def client_to_engine() -> None:
                 while True:
                     message = await client.receive()
