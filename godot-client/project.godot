@@ -1,23 +1,32 @@
-; Godot 4 project. Export preset: Web (single-threaded compatibility is recommended).
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
+
 config/name="Hold'em Royale"
 run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7")
 
 [display]
 
-[display/window]
-size/viewport_width=1280
-size/viewport_height=720
-size/window_width_override=1280
-size/window_height_override=720
-stretch/mode="canvas_items"
-
-[rendering]
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
-textures/default_filters/use_nearest_mipmap_filter=false
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
 
 [gui]
+
 theme/default_font_multichannel_signed_distance_field=true
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

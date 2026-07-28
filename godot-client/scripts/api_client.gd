@@ -9,6 +9,8 @@ signal request_failed(message: String)
 var token := ""
 var socket := WebSocketPeer.new()
 var _http: HTTPRequest
+var _pending_events: Array[Dictionary] = []
+var _socket_online := false
 
 func _ready() -> void:
 	_http = HTTPRequest.new()
@@ -24,6 +26,15 @@ func login_with_code(email: String, code: String, username: String = "") -> void
 func fetch_rooms() -> void:
 	_request_json("/api/rooms", HTTPClient.METHOD_GET)
 
+func create_room(name: String, small_blind: int = 5, big_blind: int = 10, starting_chips: int = 1000, max_seats: int = 8) -> void:
+	_request_json("/api/rooms", HTTPClient.METHOD_POST, {
+		"name": name,
+		"smallBlind": small_blind,
+		"bigBlind": big_blind,
+		"startingChips": starting_chips,
+		"maxSeats": max_seats
+	})
+
 func connect_realtime(session_token: String) -> void:
 	token = session_token
 	var ws_url := gateway_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws?token=" + token.uri_encode()
@@ -35,19 +46,28 @@ func connect_realtime(session_token: String) -> void:
 func send_event(payload: Dictionary) -> void:
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		socket.send_text(JSON.stringify(payload))
+	else:
+		_pending_events.append(payload)
 
 func _process(_delta: float) -> void:
 	socket.poll()
 	var state := socket.get_ready_state()
 	if state == WebSocketPeer.STATE_OPEN:
-		connection_changed.emit(true)
+		if not _socket_online:
+			_socket_online = true
+			connection_changed.emit(true)
+		for pending in _pending_events:
+			socket.send_text(JSON.stringify(pending))
+		_pending_events.clear()
 		while socket.get_available_packet_count() > 0:
 			var packet := socket.get_packet().get_string_from_utf8()
 			var decoded = JSON.parse_string(packet)
 			if decoded is Dictionary:
 				event_received.emit(decoded)
 	elif state == WebSocketPeer.STATE_CLOSED:
-		connection_changed.emit(false)
+		if _socket_online:
+			_socket_online = false
+			connection_changed.emit(false)
 
 func _request_json(path: String, method: HTTPClient.Method, payload: Dictionary = {}) -> void:
 	var headers := PackedStringArray(["Content-Type: application/json"])
