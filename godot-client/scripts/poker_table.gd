@@ -22,13 +22,17 @@ var _font: Font
 var _title: Label
 var _status: Label
 var _action_bar: PanelContainer
+@onready var api: PokerApiClient = $ApiClient
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	resized.connect(_adapt_layout)
+	api.event_received.connect(_on_api_event)
+	api.request_failed.connect(_on_api_error)
 	_build_hud()
 	_adapt_layout()
+	api.fetch_rooms()
 
 func _build_hud() -> void:
 	_title = Label.new()
@@ -153,3 +157,10 @@ func _draw_card(pos: Vector2, card_size: Vector2, value: String) -> void:
 	var red := value.contains("♥") or value.contains("♦")
 	var color := Color("#bd2f37") if red else Color("#172130")
 	draw_string(_font, pos + Vector2(6, card_size.y * 0.48), value, HORIZONTAL_ALIGNMENT_LEFT, card_size.x - 8, int(card_size.x * 0.35), color)
+
+func _on_api_event(payload: Dictionary) -> void:
+	if payload.has("rooms"):
+		_status.text = "FastAPI 已连接  ·  可加入 %d 张牌桌  ·  盲注 5 / 10" % payload.rooms.size()
+
+func _on_api_error(message: String) -> void:
+	_status.text = "FastAPI 未连接：" + message
